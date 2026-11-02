@@ -7,7 +7,7 @@ import { LANES, SPAWN, ROAD_HALF_WIDTH, VEHICLE, TUNNEL_HEIGHT, speedAt } from '
 import {
   box, facadeMaterials, lambert,
   makeBus, makeTruck, makeRamp, makePillar, makeWall, makeTunnelShell, makeDivider, makeLowBarrier,
-  makeMotorcycle, makeCone, makeConstructionSign, makeGate, makeBanknote, makePowerUp,
+  makeCone, makeConstructionSign, makeGate, makeBanknote, makePowerUp,
 } from './models.js';
 
 // Moving vehicles re-time themselves against the player's current speed until this close.
@@ -172,7 +172,8 @@ export class Level {
   // y0..y1 is the vertical collision band above baseY.
 
   addCone(s, lane, baseY = 0) {
-    return this.add({ kind: 'cone', s, lane, x: LANES[lane], baseY, w: 0.7, d: 0.7, y0: 0, y1: 0.9, hazard: 'crash', mesh: makeCone().root });
+    // Cones don't stop you: running through one slows you down (and counts as a scrape).
+    return this.add({ kind: 'cone', s, lane, x: LANES[lane], baseY, w: 0.7, d: 0.7, y0: 0, y1: 0.9, hazard: 'slow', mesh: makeCone().root });
   }
 
   addBarrier(s, lane, baseY = 0) {
@@ -186,12 +187,6 @@ export class Level {
   // Roadwork gate: a beam at 1.3–1.9 m. Jump over it or roll under it.
   addGate(s, lane, baseY = 0) {
     return this.add({ kind: 'gate', s, lane, x: LANES[lane], baseY, w: 2.2, d: 0.3, y0: 1.3, y1: 1.9, hazard: 'crash', mesh: makeGate().root });
-  }
-
-  addMotorcycle(s, lane, baseY = 0) {
-    const mesh = makeMotorcycle().root;
-    mesh.rotation.y = (Math.random() - 0.5) * 0.3;
-    return this.add({ kind: 'moto', s, lane, x: LANES[lane], baseY, w: 0.8, d: 1.7, y0: 0, y1: 1.1, hazard: 'slow', mesh });
   }
 
   // --- collectibles -----------------------------------------------------------

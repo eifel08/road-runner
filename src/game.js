@@ -1,6 +1,6 @@
 // Game state machine (menu -> playing -> caught -> menu), collision rules and scoring.
 import * as THREE from 'three';
-import { PLAYER, PURSUIT, SPEED, SCORE, POWERUP, speedAtTime } from './config.js';
+import { LANES, PLAYER, PURSUIT, SPEED, SCORE, POWERUP, speedAtTime } from './config.js';
 import { poseDead } from './models.js';
 import { Environment } from './environment.js';
 import { Level } from './level.js';
@@ -112,7 +112,8 @@ export class Game {
     this.level.setPlayer(this.s, this.speed);
     this.spawner.update(this.s, this.speed);
     this.level.update(dt);
-    p.update(dt, this.s, (x, s, maxY) => this.level.supportAt(x, s, maxY, PLAYER.stepUp, this.prevS));
+    const flightFloor = p.flying ? this.flightFloor() : 0;
+    p.update(dt, this.s, (x, s, maxY) => this.level.supportAt(x, s, maxY, PLAYER.stepUp, this.prevS), flightFloor);
     this.collide(dt);
     if (this.state !== 'playing') return;
 
@@ -123,6 +124,17 @@ export class Game {
 
     this.ui.setHud(this.score, this.cash, p.power);
     this.ui.setDanger(this.pursuer.close ? 0.55 : 0);
+  }
+
+  // Highest roof (building, bus, truck, ramp) under the player and up to ~0.6 s ahead, in the
+  // current and target lanes. Flights stay above it, so ending one over a roof lands you on top.
+  flightFloor() {
+    const p = this.player;
+    let floor = 0;
+    for (const x of new Set([p.x, LANES[p.lane]])) {
+      for (let ds = 0; ds <= this.speed * 0.6; ds += 1) floor = Math.max(floor, this.level.supportAt(x, this.s + ds, 1e3, 0));
+    }
+    return floor;
   }
 
   // ------------------------------------------------------------ collisions
@@ -169,7 +181,7 @@ export class Game {
     this.attract(dt);
   }
 
-  // Crash rules: running into anything head-on is fatal (motorcycles only slow you down).
+  // Crash rules: running into anything head-on is fatal (cones only slow you down).
   // Sliding into the side of something while changing lanes is a scrape: you bounce back
   // and the killer gets close; a second scrape while he's close gets you caught.
 
@@ -207,10 +219,10 @@ export class Game {
     if (p.invuln > 0) return;
     if (this.skateAbsorb()) return;
     if (e.hazard === 'slow') {
-      // Motorcycle: run right through it. It costs speed and counts as a scrape.
+      // Cone: kick it out of the way. It costs speed and counts as a scrape.
       e.hit = true;
       this.level.knock(e, Math.sign(e.x - p.x) || 1);
-      p.slowT = PURSUIT.motorcycleSlow;
+      p.slowT = PURSUIT.coneSlow;
       if (this.pursuer.scrape()) this.caught();
       return;
     }

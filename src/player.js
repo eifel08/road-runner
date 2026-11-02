@@ -20,8 +20,10 @@ export class Player {
       skateboard: makeSkateboard(),
       boots: makeBootGear(),
     };
-    this.rig.footL.add(this.gear.boots.left);
-    this.rig.footR.add(this.gear.boots.right);
+    for (const [boot, leg] of [[this.gear.boots.left, this.rig.legL], [this.gear.boots.right, this.rig.legR]]) {
+      boot.position.set(0, -0.83, 0);
+      leg.add(boot);
+    }
     this.gear.wings.root.position.set(0, 1.45, 0.2);
     this.rig.body.add(this.gear.wings.root);
     this.gear.glider.position.set(0, 2.9, 0);
@@ -121,7 +123,8 @@ export class Player {
   }
 
   // `support(x, s, maxY)` returns the walkable height under the player.
-  update(dt, s, support) {
+  // `flightFloor` is the highest roof under / just ahead of the flight path.
+  update(dt, s, support, flightFloor = 0) {
     this.t += dt;
     this.prevX = this.x;
     this.prevY = this.y;
@@ -143,7 +146,10 @@ export class Player {
     this.x += Math.sign(dx) * Math.min(Math.abs(dx), PLAYER.laneSpeed * dt);
 
     if (this.flying) {
-      this.y += (this.flightAltitude() - this.y) * Math.min(1, dt * 2.5);
+      // Never fly into or through a building or vehicle: stay above whatever is below and ahead.
+      const target = Math.max(this.flightAltitude(), flightFloor + 0.5);
+      this.y += (target - this.y) * Math.min(1, dt * (target > this.y ? 6 : 2.5));
+      this.y = Math.max(this.y, flightFloor);
       this.vy = 0;
       this.grounded = false;
       this.airTime = 1;

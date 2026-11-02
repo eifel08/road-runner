@@ -46,283 +46,156 @@ export function canvasTexture(w, h, draw) {
 
 // ---------------------------------------------------------------- humans
 
-const capsule = (r, len) => cached(geoCache, `cap${r},${len}`, () => new THREE.CapsuleGeometry(r, len, 4, 10));
+export const PLAYER_STYLE = { shirt: '#2f7de1', pants: '#39404f', skin: '#e0ac85', hair: '#3b2a1e', shoes: '#f4f4f4' };
+export const KILLER_STYLE = { shirt: '#26262c', pants: '#18181b', skin: '#c9b9a6', hood: '#1d1d22', shoes: '#111', mask: true, knife: true };
 
-export const PLAYER_STYLE = {
-  skin: '#d9a07a', hair: '#2b1d14', shirt: '#2c5d9e', hood: '#244f87', pants: '#2f4a6d', shoes: '#eeeeee', sole: '#c0392b',
-};
-export const KILLER_STYLE = {
-  skin: '#d8d4cc', shirt: '#1c1c20', coat: '#141418', hood: '#101013', pants: '#121215', shoes: '#0b0b0b',
-  gloves: '#0d0d0d', mask: true, knife: true, scale: 1.08,
-};
-
-// Jointed human: hips → knees, shoulders → elbows. Faces -z (the running direction); origin at the feet.
+// Models face -z (the running direction). The root origin sits at the feet.
 export function makeHuman(style) {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
-  root.scale.setScalar(style.scale ?? 1);
 
   const skin = lambert(style.skin);
   const shirt = lambert(style.shirt);
   const pants = lambert(style.pants);
   const shoe = lambert(style.shoes);
-  const hands = style.gloves ? lambert(style.gloves) : skin;
 
-  // Torso: tapered chest, belly, pelvis.
-  const torso = new THREE.Group();
-  body.add(torso);
-  const chest = part(cyl(0.21, 0.17, 0.42, 14), shirt, 0, 1.43, 0, torso);
-  chest.scale.z = 0.62;
-  const belly = part(cyl(0.17, 0.165, 0.2, 14), shirt, 0, 1.12, 0, torso);
-  belly.scale.z = 0.62;
-  const pelvis = part(cyl(0.165, 0.15, 0.16, 14), pants, 0, 0.97, 0, torso);
-  pelvis.scale.z = 0.66;
-  for (const sx of [-1, 1]) part(sphere(0.085), shirt, sx * 0.22, 1.6, 0, torso); // shoulders
-  part(cyl(0.055, 0.065, 0.12, 10), skin, 0, 1.69, 0, torso); // neck
+  const torso = part(box(0.56, 0.72, 0.32), shirt, 0, 1.22, 0, body);
 
-  if (style.hood && !style.mask) {
-    // Hoodie: hood hanging at the back, front pocket, drawstrings.
-    const hood = part(sphere(0.15, 12), lambert(style.hood), 0, 1.66, 0.12, torso);
-    hood.scale.set(1.2, 0.7, 0.8);
-    part(box(0.26, 0.12, 0.04), lambert(style.hood), 0, 1.12, -0.11, torso);
-    for (const x of [-0.05, 0.05]) part(box(0.012, 0.16, 0.012), lambert('#dddddd'), x, 1.52, -0.135, torso, false);
-  }
-  if (style.coat) {
-    // Long coat: skirt hanging from the waist to below the knees, collar, buttons.
-    const coat = lambert(style.coat);
-    const skirt = new THREE.Mesh(cached(geoCache, 'coatSkirt', () => new THREE.CylinderGeometry(0.2, 0.3, 0.62, 14, 1, true)), coat);
-    skirt.material = cached(matCache, 'coatMat', () => new THREE.MeshLambertMaterial({ color: style.coat, side: THREE.DoubleSide }));
-    skirt.scale.z = 0.75;
-    skirt.position.y = 0.72;
-    skirt.castShadow = true;
-    torso.add(skirt);
-    chest.material = coat;
-    belly.material = coat;
-    part(cyl(0.14, 0.2, 0.12, 12), coat, 0, 1.66, 0.01, torso).scale.z = 0.8; // collar
-    for (let i = 0; i < 3; i++) part(sphere(0.018, 6), lambert('#333'), 0, 1.45 - i * 0.17, -0.135, torso, false);
-  }
-
-  // Head.
   const head = new THREE.Group();
-  head.position.set(0, 1.86, 0);
+  head.position.set(0, 1.79, 0);
   body.add(head);
-  const skull = part(sphere(0.125, 16), skin, 0, 0, 0, head);
-  skull.scale.set(0.9, 1.08, 1.0);
-  part(box(0.15, 0.08, 0.14), skin, 0, -0.08, -0.02, head); // jaw
-  for (const sx of [-1, 1]) part(sphere(0.03, 6), skin, sx * 0.115, 0, 0.01, head); // ears
+  part(box(0.34, 0.38, 0.34), skin, 0, 0, 0, head);
+  if (style.hair) {
+    part(box(0.36, 0.12, 0.37), lambert(style.hair), 0, 0.2, 0.01, head);
+    part(box(0.36, 0.26, 0.08), lambert(style.hair), 0, 0.06, 0.16, head);
+  }
+  if (style.hood) part(box(0.42, 0.46, 0.4), lambert(style.hood), 0, 0.05, 0.06, head);
   if (style.mask) {
-    // Pale hockey-style mask with dark eye holes, under a deep hood.
-    // The mask sits just in front of the hood; its front surface is at z ≈ -0.16.
-    const mask = part(sphere(0.122, 14), lambert('#e9e4d8'), 0, 0, -0.045, head);
-    mask.scale.set(0.88, 1.1, 0.95);
-    for (const sx of [-1, 1]) {
-      const eye = part(sphere(0.03, 8), basic('#000000'), sx * 0.045, 0.03, -0.148, head, false); // hollow eye holes
-      eye.scale.set(1.3, 0.75, 0.5);
-      const brow = part(box(0.06, 0.012, 0.01), lambert('#b8b0a0'), sx * 0.045, 0.062, -0.156, head, false);
-      brow.rotation.z = sx * 0.35; // angry slant
-    }
-    part(box(0.07, 0.012, 0.01), basic('#000000'), 0, -0.065, -0.158, head, false); // mouth slit
-    for (let i = 0; i < 5; i++) part(sphere(0.007, 4), basic('#000000'), -0.036 + i * 0.018, -0.095, -0.152, head, false);
-    const hood = part(sphere(0.165, 14), lambert(style.hood), 0, 0.03, 0.035, head);
-    hood.scale.set(1.0, 1.15, 1.05);
+    part(box(0.28, 0.32, 0.03), lambert('#e8e4da'), 0, 0, -0.18, head, false);
+    part(box(0.07, 0.035, 0.02), lambert('#111'), -0.07, 0.05, -0.2, head, false);
+    part(box(0.07, 0.035, 0.02), lambert('#111'), 0.07, 0.05, -0.2, head, false);
+    part(box(0.12, 0.02, 0.02), lambert('#333'), 0, -0.08, -0.2, head, false);
   } else {
-    for (const sx of [-1, 1]) {
-      part(sphere(0.016, 6), basic('#1b1b1b'), sx * 0.042, 0.02, -0.112, head, false); // eyes
-      part(box(0.05, 0.012, 0.012), lambert(style.hair), sx * 0.042, 0.055, -0.112, head, false); // brows
-    }
-    part(box(0.025, 0.045, 0.03), skin, 0, -0.01, -0.125, head, false); // nose
-    part(box(0.05, 0.01, 0.01), lambert('#a5615a'), 0, -0.065, -0.118, head, false); // mouth
-    // Hair: a cap over the top and back of the head, with a short fringe above the brow.
-    const hair = part(sphere(0.13, 14), lambert(style.hair), 0, 0.055, 0.03, head);
-    hair.scale.set(0.95, 0.92, 0.95);
-    part(box(0.19, 0.045, 0.05), lambert(style.hair), 0, 0.105, -0.085, head);
+    part(box(0.05, 0.05, 0.02), lambert('#222'), -0.08, 0.04, -0.175, head, false);
+    part(box(0.05, 0.05, 0.02), lambert('#222'), 0.08, 0.04, -0.175, head, false);
   }
 
   const makeLeg = (sx) => {
-    const hip = new THREE.Group();
-    hip.position.set(sx * 0.095, 0.96, 0);
-    body.add(hip);
-    part(capsule(0.08, 0.32), pants, 0, -0.22, 0, hip); // thigh
-    const knee = new THREE.Group();
-    knee.position.y = -0.45;
-    hip.add(knee);
-    part(capsule(0.062, 0.3), pants, 0, -0.2, 0, knee); // shin
-    const foot = new THREE.Group();
-    foot.position.set(0, -0.44, 0);
-    knee.add(foot);
-    part(box(0.12, 0.09, 0.27), shoe, 0, 0.0, -0.05, foot);
-    if (style.sole) part(box(0.125, 0.03, 0.28), lambert(style.sole), 0, -0.045, -0.05, foot, false);
-    return { hip, knee, foot };
+    const pivot = new THREE.Group();
+    pivot.position.set(sx, 0.86, 0);
+    body.add(pivot);
+    part(box(0.21, 0.82, 0.24), pants, 0, -0.41, 0, pivot);
+    part(box(0.23, 0.1, 0.32), shoe, 0, -0.83, -0.04, pivot);
+    return pivot;
   };
   const makeArm = (sx) => {
-    const shoulder = new THREE.Group();
-    shoulder.position.set(sx * 0.25, 1.58, 0);
-    body.add(shoulder);
-    part(capsule(0.058, 0.22), style.coat ? lambert(style.coat) : shirt, 0, -0.15, 0, shoulder); // upper arm
-    const elbow = new THREE.Group();
-    elbow.position.y = -0.3;
-    shoulder.add(elbow);
-    part(capsule(0.05, 0.2), style.coat ? lambert(style.coat) : skin, 0, -0.13, 0, elbow); // forearm
-    const hand = part(sphere(0.055, 8), hands, 0, -0.3, 0, elbow);
-    hand.scale.set(0.8, 1.1, 0.9);
-    return { shoulder, elbow };
+    const pivot = new THREE.Group();
+    pivot.position.set(sx, 1.52, 0);
+    body.add(pivot);
+    part(box(0.17, 0.62, 0.19), shirt, 0, -0.3, 0, pivot);
+    part(box(0.15, 0.14, 0.15), skin, 0, -0.68, 0, pivot);
+    return pivot;
   };
 
-  const legL = makeLeg(-1), legR = makeLeg(1);
-  const armL = makeArm(-1), armR = makeArm(1);
   const rig = {
     root, body, torso, head,
-    legL: legL.hip, legR: legR.hip, kneeL: legL.knee, kneeR: legR.knee, footL: legL.foot, footR: legR.foot,
-    armL: armL.shoulder, armR: armR.shoulder, elbowL: armL.elbow, elbowR: armR.elbow,
+    legL: makeLeg(-0.15), legR: makeLeg(0.15),
+    armL: makeArm(-0.37), armR: makeArm(0.37),
   };
 
   if (style.knife) {
-    // Big kitchen knife, held point-down in the right fist so it continues the forearm.
-    part(box(0.05, 0.13, 0.06), lambert('#2a1a10'), 0, -0.35, 0, rig.elbowR);
-    part(box(0.12, 0.02, 0.07), metal('#888'), 0, -0.42, 0, rig.elbowR);
-    const blade = part(box(0.012, 0.34, 0.075), metal('#e8edf2', { roughness: 0.15 }), 0, -0.6, 0.01, rig.elbowR);
-    blade.castShadow = true;
-    part(box(0.012, 0.06, 0.04), metal('#e8edf2', { roughness: 0.15 }), 0, -0.79, -0.005, rig.elbowR).rotation.x = 0.5;
+    // Held point-down in the right fist, so the blade continues the arm line.
+    part(box(0.07, 0.16, 0.08), lambert('#3a2a1a'), 0, -0.8, 0, rig.armR);
+    part(box(0.05, 0.42, 0.11), metal('#dfe4ea'), 0, -1.08, 0, rig.armR);
   }
 
-  root.traverse((o) => { if (o.isMesh && o.castShadow !== false) o.castShadow = true; });
+  root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return rig;
 }
 
-// Every pose starts from straight joints, then bends what it needs.
-function resetJoints(rig) {
-  rig.kneeL.rotation.set(0, 0, 0);
-  rig.kneeR.rotation.set(0, 0, 0);
-  rig.footL.rotation.set(0, 0, 0);
-  rig.footR.rotation.set(0, 0, 0);
-  rig.elbowL.rotation.set(0, 0, 0);
-  rig.elbowR.rotation.set(0, 0, 0);
-  rig.legL.rotation.set(0, 0, 0);
-  rig.legR.rotation.set(0, 0, 0);
-  rig.head.rotation.set(0, 0, 0);
-}
-
 export function poseRun(rig, phase, amount = 1) {
-  resetJoints(rig);
   const s = Math.sin(phase);
-  rig.body.rotation.set(-0.16 * amount, Math.sin(phase) * 0.08 * amount, 0);
-  rig.body.position.set(0, Math.abs(Math.cos(phase)) * 0.07 * amount, 0);
-  // Thighs swing; the knee folds when the leg is behind, the shin reaches forward when in front.
-  rig.legL.rotation.x = s * 0.85 * amount;
-  rig.legR.rotation.x = -s * 0.85 * amount;
-  rig.kneeL.rotation.x = -(0.25 + Math.max(0, -s) * 1.35 + Math.max(0, Math.cos(phase)) * 0.3) * amount;
-  rig.kneeR.rotation.x = -(0.25 + Math.max(0, s) * 1.35 + Math.max(0, -Math.cos(phase)) * 0.3) * amount;
-  rig.footL.rotation.x = 0.3 * Math.max(0, -s) * amount;
-  rig.footR.rotation.x = 0.3 * Math.max(0, s) * amount;
-  rig.armL.rotation.set(-s * 0.8 * amount, 0, -0.08);
-  rig.armR.rotation.set(s * 0.8 * amount, 0, 0.08);
-  rig.elbowL.rotation.x = 1.25 * amount;
-  rig.elbowR.rotation.x = 1.25 * amount;
+  rig.body.rotation.set(-0.12 * amount, 0, 0);
+  rig.body.position.set(0, Math.abs(Math.cos(phase)) * 0.08 * amount, 0);
+  rig.legL.rotation.x = s * 0.95 * amount;
+  rig.legR.rotation.x = -s * 0.95 * amount;
+  rig.armL.rotation.set(-s * 0.85 * amount, 0, 0);
+  rig.armR.rotation.set(s * 0.85 * amount, 0, 0);
 }
 
 export function poseJump(rig) {
-  resetJoints(rig);
-  rig.body.rotation.set(-0.12, 0, 0);
-  rig.body.position.set(0, 0.12, 0);
-  rig.legL.rotation.x = 1.15;
-  rig.kneeL.rotation.x = -1.5;
-  rig.legR.rotation.x = 0.1;
-  rig.kneeR.rotation.x = -1.2;
-  rig.armL.rotation.set(2.2, 0, -0.35);
-  rig.armR.rotation.set(-0.6, 0, 0.35);
-  rig.elbowL.rotation.x = 0.5;
-  rig.elbowR.rotation.x = 0.9;
+  rig.body.rotation.set(-0.1, 0, 0);
+  rig.body.position.set(0, 0.1, 0);
+  rig.legL.rotation.x = 1.0;
+  rig.legR.rotation.x = -0.35;
+  rig.armL.rotation.set(2.4, 0, -0.3);
+  rig.armR.rotation.set(2.4, 0, 0.3);
 }
 
 export function poseSlide(rig) {
-  resetJoints(rig);
-  rig.body.rotation.set(1.15, 0, 0); // lean back
-  rig.body.position.set(0, 0.24, 0);
-  rig.legL.rotation.x = 0.3;
-  rig.legR.rotation.x = 0.55;
-  rig.kneeR.rotation.x = -0.9;
-  rig.armL.rotation.set(-0.5, 0, -0.5);
-  rig.armR.rotation.set(-0.5, 0, 0.5);
-  rig.elbowL.rotation.x = 0.4;
-  rig.elbowR.rotation.x = 0.4;
-  rig.head.rotation.x = -0.9; // keep looking ahead
+  rig.body.rotation.set(1.2, 0, 0); // lean back
+  rig.body.position.set(0, 0.22, 0);
+  rig.legL.rotation.x = 0.25;
+  rig.legR.rotation.x = 0.45;
+  rig.armL.rotation.set(-0.6, 0, -0.4);
+  rig.armR.rotation.set(-0.6, 0, 0.4);
 }
 
 export function poseFly(rig, t) {
-  resetJoints(rig);
-  rig.body.rotation.set(-0.95, 0, 0); // superman lean
+  rig.body.rotation.set(-0.9, 0, 0); // superman lean
   rig.body.position.set(0, 0.6, 0);
-  rig.legL.rotation.x = -0.15 + Math.sin(t * 6) * 0.12;
-  rig.legR.rotation.x = -0.15 - Math.sin(t * 6) * 0.12;
-  rig.kneeL.rotation.x = -0.3;
-  rig.kneeR.rotation.x = -0.2;
-  rig.armL.rotation.set(0.2, 0, -1.2);
-  rig.armR.rotation.set(0.2, 0, 1.2);
-  rig.head.rotation.x = 0.8;
+  rig.legL.rotation.x = -0.2 + Math.sin(t * 6) * 0.15;
+  rig.legR.rotation.x = -0.2 - Math.sin(t * 6) * 0.15;
+  rig.armL.rotation.set(0.3, 0, -1.1);
+  rig.armR.rotation.set(0.3, 0, 1.1);
 }
 
 export function poseHang(rig, t) {
-  resetJoints(rig);
   rig.body.rotation.set(-0.2, 0, Math.sin(t * 2) * 0.05);
   rig.body.position.set(0, 0, 0);
   rig.legL.rotation.x = 0.3 + Math.sin(t * 3) * 0.2;
   rig.legR.rotation.x = 0.3 - Math.sin(t * 3) * 0.2;
-  rig.kneeL.rotation.x = -0.6;
-  rig.kneeR.rotation.x = -0.4;
-  rig.armL.rotation.set(Math.PI, 0, 0.25);
-  rig.armR.rotation.set(Math.PI, 0, -0.25);
+  rig.armL.rotation.set(Math.PI, 0, 0.2);
+  rig.armR.rotation.set(Math.PI, 0, -0.2);
 }
 
 export function posePogo(rig) {
-  resetJoints(rig);
   rig.body.rotation.set(0, 0, 0);
   rig.body.position.set(0, 0, 0);
-  rig.legL.rotation.x = 0.35;
-  rig.legR.rotation.x = 0.35;
-  rig.kneeL.rotation.x = -0.6;
-  rig.kneeR.rotation.x = -0.6;
+  rig.legL.rotation.x = 0.15;
+  rig.legR.rotation.x = 0.15;
   rig.armL.rotation.set(0.9, 0, 0.25);
   rig.armR.rotation.set(0.9, 0, -0.25);
-  rig.elbowL.rotation.x = 0.6;
-  rig.elbowR.rotation.x = 0.6;
 }
 
 // Surf stance on the skateboard: body turned sideways, knees bent, arms out for balance.
 export function poseSkate(rig, t) {
-  resetJoints(rig);
   rig.body.rotation.set(0, 0.9, Math.sin(t * 2.5) * 0.06);
-  rig.body.position.set(0, -0.05 - 0.04 * Math.abs(Math.sin(t * 2.5)), 0);
-  rig.legL.rotation.x = 0.5;
-  rig.legR.rotation.x = -0.2;
-  rig.kneeL.rotation.x = -0.7;
-  rig.kneeR.rotation.x = -0.6;
+  rig.body.position.set(0, 0.12 - 0.05 * Math.abs(Math.sin(t * 2.5)), 0);
+  rig.legL.rotation.x = 0.35;
+  rig.legR.rotation.x = -0.35;
   rig.armL.rotation.set(0.2, 0, -1.2);
   rig.armR.rotation.set(-0.2, 0, 1.2);
-  rig.elbowL.rotation.x = 0.3;
-  rig.elbowR.rotation.x = 0.3;
 }
 
 export function poseIdle(rig, t) {
-  resetJoints(rig);
   rig.body.rotation.set(0, 0, 0);
   rig.body.position.set(0, Math.sin(t * 2) * 0.01, 0);
-  rig.armL.rotation.set(0, 0, -0.1);
-  rig.armR.rotation.set(0, 0, 0.1);
-  rig.elbowL.rotation.x = 0.15;
-  rig.elbowR.rotation.x = 0.15;
+  rig.legL.rotation.x = 0;
+  rig.legR.rotation.x = 0;
+  rig.armL.rotation.set(0, 0, -0.08);
+  rig.armR.rotation.set(0, 0, 0.08);
 }
 
-// Knocked down on the street after being caught.
+// Knocked down on the street after being caught (the body is rotated flat by the caller).
 export function poseDead(rig) {
-  resetJoints(rig);
+  rig.body.rotation.set(0, 0, 0);
   rig.body.position.set(0, 0, 0);
   rig.legL.rotation.x = 0.2;
-  rig.legR.rotation.x = -0.1;
-  rig.kneeR.rotation.x = -0.6;
+  rig.legR.rotation.x = -0.3;
   rig.armL.rotation.set(2.6, 0, -0.5);
   rig.armR.rotation.set(1.2, 0, 0.6);
-  rig.elbowR.rotation.x = 0.8;
   rig.head.rotation.set(0, 0.6, 0);
 }
 
@@ -352,24 +225,6 @@ export function makeCar(color = CAR_COLORS[Math.floor(Math.random() * CAR_COLORS
   part(box(0.36, 0.14, 0.04), basic('#c0392b'), 0.6, 0.65, -front, root, false);
   if (color === '#f1c40f') part(box(0.5, 0.18, 0.28), lambert('#222'), 0, 1.66, 0, root); // taxi sign
   return { root, wheels };
-}
-
-export function makeMotorcycle() {
-  const root = new THREE.Group();
-  const red = lambert('#c0392b');
-  const black = lambert('#1b1b1b');
-  for (const z of [-0.62, 0.62]) {
-    const w = part(cyl(0.34, 0.34, 0.14, 16), black, 0, 0.34, z, root);
-    w.rotation.z = Math.PI / 2;
-    part(cyl(0.12, 0.12, 0.16, 8), metal('#999'), 0, 0.34, z, root).rotation.z = Math.PI / 2;
-  }
-  part(box(0.3, 0.36, 1.0), red, 0, 0.62, 0, root);
-  part(box(0.36, 0.26, 0.5), red, 0, 0.86, -0.18, root); // tank
-  part(box(0.3, 0.1, 0.6), black, 0, 0.84, 0.3, root); // seat
-  part(box(0.06, 0.6, 0.06), metal('#aaa'), 0, 0.82, -0.58, root).rotation.x = -0.35;
-  part(box(0.8, 0.05, 0.05), metal('#aaa'), 0, 1.08, -0.66, root);
-  part(box(0.16, 0.14, 0.06), basic('#fff7cc'), 0, 0.92, -0.72, root, false);
-  return { root };
 }
 
 const BUS_LIVERIES = [

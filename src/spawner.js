@@ -135,7 +135,7 @@ export class Spawner {
       const lane = lanes[i];
       if (reserved(lane)) continue;
       const type = pickWeighted({
-        cone: 2, barrier: 2, sign: 2.5, gate: 1 + 1.5 * diff, moto: 1.2,
+        cone: 2, barrier: 2.2, sign: 2.5, gate: 1.2 + 1.5 * diff,
         bus: 1.6, truck: 1.8, movingBus: 0.4 + 2 * diff, movingTruck: 0.1 + 0.8 * diff,
       });
       placed[lane] = type;
@@ -160,7 +160,6 @@ export class Spawner {
       case 'barrier': L.addBarrier(s, lane); break;
       case 'sign': L.addSign(s, lane); break;
       case 'gate': L.addGate(s, lane); break;
-      case 'moto': L.addMotorcycle(s, lane); break;
       case 'bus': {
         // Too tall to jump onto; the cash on the roof is a pogo-stick reward.
         const bus = L.addBus(lane, s);
@@ -189,8 +188,8 @@ export class Spawner {
 
   placeCash(s, freeLane, placed) {
     const L = this.level;
-    // Sometimes reward the riskier lane: an arc over a cone / barrier / motorcycle.
-    const risky = Object.entries(placed).find(([, t]) => t === 'cone' || t === 'barrier' || t === 'moto');
+    // Sometimes reward the riskier lane: an arc over a cone / barrier.
+    const risky = Object.entries(placed).find(([, t]) => t === 'cone' || t === 'barrier');
     if (risky && Math.random() < 0.4) {
       const lane = Number(risky[0]);
       for (let k = -3; k <= 3; k++) {

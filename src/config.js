@@ -8,7 +8,7 @@ export const PLAYER = {
   halfDepth: 0.3,
   height: 1.8,
   slideHeight: 0.8,
-  jumpVelocity: 14.5, // apex ~2.6 m: clears cones, barriers, birds, motorcycles, but not buses
+  jumpVelocity: 14.5, // apex ~2.6 m: clears cones, barriers and gates, but not buses
   gravity: 40,
   fastDropVelocity: -26,
   slideTime: 0.7,
@@ -53,7 +53,7 @@ export const PURSUIT = {
   introDuration: 3.5, // he starts each run on your tail
   closeZ: 2.4, // distance behind the player while close
   farZ: 13, // distance while dropped back (off screen)
-  motorcycleSlow: 1.0, // seconds of reduced speed after running through a motorcycle
+  coneSlow: 1.0, // seconds of reduced speed after running through a cone
 };
 
 // Vehicles. Heights are the walkable roof height.

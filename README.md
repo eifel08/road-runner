@@ -22,13 +22,14 @@ Then open http://localhost:5173. Add `?debug` to the URL to expose `window.game`
 
 ## Rules
 
-- **Crashes are fatal.** Running head-on into anything (cone, barrier, sign, roadwork gate, bus, truck, pillar, tunnel wall, building wall) ends the run. The killer catches you and stabs you, with blood. The only exception is the **motorcycle**: run straight through it and you just slow down.
-- **Landing on top** of a low obstacle (cone, barrier, gate, sign) instead of hitting its face is a stumble that counts as a scrape, not a crash.
+- **Crashes are fatal.** Running head-on into anything (roadwork barrier, sign or gate, bus, truck, pillar, tunnel wall, building wall) ends the run. The killer catches you and stabs you, with blood. The only exception is the **traffic cone**: you kick it out of the way, but it slows you down and counts as a scrape.
+- **Landing on top** of a low obstacle (barrier, gate, sign) instead of hitting its face is a stumble that counts as a scrape, not a crash.
 - **Ramps are solid underneath.** Switching lanes into the side of a ramp is a scrape. You bump off it and can never end up under it.
-- **Close calls.** A *scrape* is sliding into the side of something while changing lanes (a bus, a divider, a wall) or running through a motorcycle. You bounce back and the masked killer gets right on your tail. Scrape again while he's close and he catches you. Go 7 seconds without a scrape and he drops back. Every run starts with him on your tail for a few seconds.
+- **Close calls.** A *scrape* is sliding into the side of something while changing lanes (a bus, a divider, a wall) or running through a cone. You bounce back and the masked killer gets right on your tail. Scrape again while he's close and he catches you. Go 7 seconds without a scrape and he drops back. Every run starts with him on your tail for a few seconds.
 - **Speed** follows an arctan curve over time. It climbs fast at the start (14 → 29 m/s in the first 30 s), then flattens out toward a 44 m/s limit it never reaches.
 - **Difficulty** grows with distance. The opening is roomy, with mostly single-lane obstacles and no set pieces. Gaps tighten, two-lane blocks and moving vehicles become common, and set pieces take over the further you get.
-- **Traffic cone / low barrier**: jump over it. **Construction sign**: roll under it. **Roadwork gate** (a beam at chest height): jump over it or roll under it.
+- **Roadwork**, three kinds: the overhead **construction sign** (roll under it), the low **striped barrier** (jump over it) and the **roadwork gate**, a beam at chest height that you can either jump over or roll under.
+- **Traffic cone**: slows you down when you run through it.
 - **Buses**: parked and oncoming. They're too tall to jump onto unless you have the pogo stick.
 - **Car-carrier trucks**: parked trucks face away from you, with a ramp at the back. Run up the ramp to get on top. Oncoming trucks show you their cab and work like buses.
 
@@ -57,7 +58,7 @@ Patterns are sized for the speed you'll have when you reach them. Gaps between r
 | 2x Multiplier | Distance score counts double while it's active. |
 | Skateboard | Absorbs one hit of any kind, even the killer's catch. The board breaks, and a shockwave destroys every obstacle, vehicle and structure within about 90 m and flattens the buildings along the street. |
 
-Nothing can hit you while you fly. **Swipe down** (↓) during the glider or wings to cancel it and drop straight back to the street. You get a couple of seconds of safety on landing.
+Nothing can hit you while you fly, and you always stay above the buildings and vehicles below, so a flight that ends over a rooftop lands you on the roof. **Swipe down** (↓) during the glider or wings to cancel it and drop straight back to the street. You get a couple of seconds of safety on landing.
 
 **Score** = meters run (doubled during the 2x Multiplier) + 5 × banknotes. The best score is saved in `localStorage`.
 
