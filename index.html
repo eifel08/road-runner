@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Road Runner</title>
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <div id="game"></div>
+
+  <div id="hud" class="hidden">
+    <div id="score">0</div>
+    <div id="cash"><span class="note"></span><span id="cash-count">0</span></div>
+    <div id="powers"></div>
+  </div>
+
+  <div id="vignette"></div>
+
+  <div id="menu">
+    <h1>ROAD RUNNER</h1>
+    <div id="best">HIGH SCORE <strong id="best-value">0</strong></div>
+    <div id="last" class="hidden">SCORE <strong id="last-value">0</strong></div>
+    <button id="play">PLAY</button>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
