@@ -22,22 +22,25 @@ Then open http://localhost:5173. Add `?debug` to the URL to expose `window.game`
 
 ## Rules
 
-- **Killer**: a masked killer chases you. Each mistake lets him close in. If he catches you, he stabs you and the run ends.
-- **Traffic cone**: jump over it.
-- **Construction sign**: slide under it.
-- **Bird**: jump over it or slide under it.
-- **Motorcycle**: jump over it, or run through it and lose speed.
-- **Buses**: parked and oncoming. They're too tall to jump onto (unless you have the pogo stick). A head-on hit gets you caught.
+- **Crashes are fatal.** Running head-on into anything (cone, barrier, sign, bird, bus, truck, pillar, tunnel wall, building wall) ends the run: the killer catches you and stabs you. The only exception is the **motorcycle**: run straight through it and you just slow down.
+- **Close calls.** A *scrape* is sliding into the side of something while changing lanes (a bus, a divider, a wall) or running through a motorcycle. You bounce back and the masked killer gets right on your tail. Scrape again while he's close and he catches you. Go 7 seconds without a scrape and he drops back. Every run starts with him on your tail for a few seconds.
+- **Speed** rises with distance, from 16 m/s to 42 m/s at about 2,900 m.
+- **Traffic cone / low barrier**: jump over it. **Construction sign**: roll under it. **Bird**: jump or roll.
+- **Buses**: parked and oncoming. They're too tall to jump onto unless you have the pogo stick.
 - **Car-carrier trucks**: parked trucks face away from you, with a ramp at the back. Run up the ramp to get on top. Oncoming trucks show you their cab and work like buses.
-- **Rooftops**: ramps lead up onto a row of building roofs. Jump the alleys between them; if you fall in, you climb back up but lose ground.
-- Side-swiping an obstacle while changing lanes bounces you back and lets the killer gain on you.
 
-### Set pieces
+### Patterns and sections
 
-- **Pillar overpass**: pillars stand between the lanes, so you can only change lanes in the gaps. Buses come down the left or right lane, alternating sides and never both in the same gap. Cash sits on the safe side.
-- **Dual tunnels**: a wall down the middle splits two tunnels. Hitting the wall's end gets you caught. One tunnel has cash, and a bus reaches that tunnel's exit just after you come out.
-- **Ramp weave**: a truck ramp on one side, a second truck ramp on the other side one vehicle length later, and a moving bus with cash on its roof driving between them.
-- **Risk/reward line**: a straight line of cash with a vehicle coming the other way. It reaches the last note a fraction of a second after you could grab it.
+- **Vehicle chain**: a truck ramp leads up to a run of parked car carriers in two adjacent lanes. Hop sideways where two roofs overlap, or jump the short gaps. Moving buses, some carrying cash, drive along the third lane underneath.
+- **Triple stagger**: every row blocks two lanes, mostly with buses, leaving one open lane that shifts over one lane each row.
+- **Jump-roll combo**: low barriers across all three lanes, then construction signs right after. Jump, then roll.
+- **Risk/reward line**: a straight line of cash with a vehicle coming the other way that reaches the last note just after you do. There's about half a second of leeway.
+- **Multi-bus coin line**: a long cash line with 3–4 buses coming down it in quick succession. Dodge out, come back, repeat.
+- **Pillar overpass**: concrete columns stand in the lanes and low dividers partition the tracks. There's one weaving path through. You can only switch lanes where the dividers open up, or by jumping over a divider.
+- **Dual tunnels**: a wall down the middle splits two tunnels. One holds cash, and a bus reaches that tunnel's exit shortly after you come out.
+- **Rooftops**: a ramp leads up onto building roofs. Jump the alleys between them; falling in means hitting a wall.
+
+Patterns are sized for the speed you'll have when you reach them. Gaps between rows, combo spacing, and roof and truck lengths all scale so a well-timed jump always lands on something.
 
 ### Power-ups
 
@@ -45,9 +48,11 @@ Then open http://localhost:5173. Add `?debug` to the URL to expose `window.game`
 | --- | --- |
 | Magnet | Pulls nearby banknotes to you |
 | Pogo Stick | Makes your jump much higher (about 5.5 m): over construction signs and onto buses, trucks and roofs. No automatic bouncing. |
-| Glider | Launches you to about 12 m, then you glide down over a trail of high-altitude cash. Nothing can hit you while you fly. |
-| Metal Wings | Lifts you to 9 m for a cash run in the sky. Nothing can hit you while you fly. |
-| Skateboard | Absorbs one hit of any kind (even the killer's catch). The board breaks, and a shockwave destroys every obstacle, vehicle and structure within about 90 m and flattens the buildings along the street. |
+| Glider | A short (5 s) lift to 10 m over three parallel rows of cash. A random power-up waits at the end of one row. |
+| Metal Wings | 10 s at 9 m over a structured cash path that weaves between lanes: straight runs, smooth lane shifts, zig-zags and full-width snakes. |
+| Skateboard | Absorbs one hit of any kind, even the killer's catch. The board breaks, and a shockwave destroys every obstacle, vehicle and structure within about 90 m and flattens the buildings along the street. |
+
+Nothing can hit you while you fly. **Swipe down** (↓) during the glider or wings to cancel it and drop straight back to the street. You get a couple of seconds of safety on landing.
 
 **Score** = meters run + 5 × banknotes. The best score is saved in `localStorage`.
 
@@ -58,9 +63,9 @@ Then open http://localhost:5173. Add `?debug` to the URL to expose `window.game`
 | `src/config.js` | All tuning constants (speeds, gaps, power-up durations, scoring) |
 | `src/game.js` | State machine (menu → playing → caught), collision rules, scoring, camera |
 | `src/player.js` | Lanes, jump/slide physics, power-up movement modes, animation |
-| `src/pursuer.js` | Killer chase gap and the catch/stab animation |
+| `src/pursuer.js` | Killer close-call state and the catch/stab animation |
 | `src/level.js` | Track entities (obstacles, platforms, collectibles) and their updates |
-| `src/spawner.js` | Procedural rows, set pieces (pillars, tunnels, rooftops, ramp weave, risk lines), cash, power-ups, air trails |
+| `src/spawner.js` | Dense procedural rows, patterns (vehicle chain, stagger, jump-roll, risk line, bus train), sections (pillars, tunnels, rooftops), cash, power-ups, sky runs |
 | `src/environment.js` | Scrolling road, sidewalks, recycled buildings and lamps |
 | `src/effects.js` | Debris bursts and the skateboard shockwave |
 | `src/models.js` | Procedural low-poly models and textures |

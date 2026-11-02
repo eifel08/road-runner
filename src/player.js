@@ -65,7 +65,16 @@ export class Player {
       }
       return;
     }
-    if (this.flying) return;
+    if (this.flying) {
+      // Swipe down cancels the glider / wings and drops you straight back to the street.
+      if (action === 'slide') {
+        this.power.wings = 0;
+        this.power.glider = 0;
+        this.vy = PLAYER.fastDropVelocity;
+        this.invuln = Math.max(this.invuln, 2);
+      }
+      return;
+    }
     if (action === 'jump' && (this.grounded || this.airTime < COYOTE_TIME)) {
       // The pogo stick only acts when you jump: a much higher jump, over signs and onto buses / roofs.
       this.pogoJump = this.power.pogo > 0;
@@ -113,7 +122,7 @@ export class Player {
     if (wasFlying && !this.flying) {
       // Safe landing: a moment of invulnerability while dropping back into traffic.
       this.invuln = Math.max(this.invuln, 2);
-      this.vy = 0;
+      this.vy = Math.min(this.vy, 0);
     }
     this.invuln = Math.max(0, this.invuln - dt);
     this.stumbleT = Math.max(0, this.stumbleT - dt);
@@ -152,11 +161,10 @@ export class Player {
     }
   }
 
-  // Wings hold a steady altitude; the glider launches high and sinks slowly over its duration.
+  // Wings hold a steady altitude; the glider lifts you up, then glides down in its last second.
   flightAltitude() {
     if (this.power.wings > 0) return POWERUP.wings.altitude;
-    const g = POWERUP.glider;
-    return g.endAltitude + (g.startAltitude - g.endAltitude) * (this.power.glider / g.duration);
+    return this.power.glider > POWERUP.glider.descent ? POWERUP.glider.altitude : 1.5;
   }
 
   updateGear() {

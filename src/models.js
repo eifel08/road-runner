@@ -312,11 +312,45 @@ export function makeRamp(width, length, height, color = '#b8862b') {
   return root;
 }
 
-export function makePillar(height) {
+// Concrete column holding up the overpass; stands in a lane and blocks it.
+export function makePillar(height, width = 1.4) {
   const root = new THREE.Group();
-  part(box(0.6, height, 0.9), lambert('#8395a7'), 0, height / 2, 0, root);
-  part(box(0.8, 0.4, 1.1), lambert('#576574'), 0, 0.2, 0, root);
-  part(box(0.62, 0.5, 0.92), lambert('#f1c40f'), 0, 1.0, 0, root, false);
+  part(box(width, height, width), lambert('#8395a7'), 0, height / 2, 0, root);
+  part(box(width + 0.2, 0.4, width + 0.2), lambert('#576574'), 0, 0.2, 0, root);
+  part(box(width + 0.02, 0.6, width + 0.02), lambert('#f1c40f'), 0, 1.0, 0, root, false);
+  part(box(width + 0.02, 0.2, width + 0.02), lambert('#222'), 0, 1.0, 0, root, false);
+  return root;
+}
+
+// Low jersey barrier between two lanes. Low enough to jump over sideways.
+export function makeDivider(length, height) {
+  const root = new THREE.Group();
+  part(box(0.45, height, length), lambert('#bdc3c7'), 0, height / 2, 0, root).receiveShadow = true;
+  part(box(0.47, 0.12, length), lambert('#e74c3c'), 0, height - 0.2, 0, root, false);
+  return root;
+}
+
+// Low road barrier across a lane: jump over it.
+export function makeLowBarrier() {
+  const root = new THREE.Group();
+  const leg = lambert('#555b63');
+  for (const x of [-0.9, 0.9]) {
+    part(box(0.08, 0.9, 0.08), leg, x, 0.45, 0, root);
+    part(box(0.5, 0.06, 0.4), leg, x, 0.03, 0, root);
+  }
+  const board = cached(matCache, 'barrierMat', () => new THREE.MeshLambertMaterial({ map: canvasTexture(256, 64, (ctx, w, h) => {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#e74c3c';
+    for (let i = -h; i < w; i += 48) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0); ctx.lineTo(i + 24, 0); ctx.lineTo(i + 24 + h, h); ctx.lineTo(i + h, h);
+      ctx.fill();
+    }
+  }) }));
+  part(box(2.0, 0.4, 0.1), board, 0, 0.7, 0, root);
+  part(box(0.12, 0.12, 0.06), basic('#ffcc00'), -0.9, 0.98, 0, root, false);
+  part(box(0.12, 0.12, 0.06), basic('#ffcc00'), 0.9, 0.98, 0, root, false);
   return root;
 }
 

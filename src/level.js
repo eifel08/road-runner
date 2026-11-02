@@ -3,10 +3,10 @@
 // Positions are kept in track space: `s` is distance along the run (meters), `x` is sideways.
 // The player always renders at z = 0, so an entity renders at z = playerS - s.
 import * as THREE from 'three';
-import { LANES, SPAWN, ROAD_HALF_WIDTH, VEHICLE, TUNNEL_HEIGHT } from './config.js';
+import { LANES, SPAWN, ROAD_HALF_WIDTH, VEHICLE, TUNNEL_HEIGHT, speedAt } from './config.js';
 import {
   box, facadeMaterials, lambert,
-  makeBus, makeTruck, makeRamp, makePillar, makeWall, makeTunnelShell,
+  makeBus, makeTruck, makeRamp, makePillar, makeWall, makeTunnelShell, makeDivider, makeLowBarrier,
   makeMotorcycle, makeCone, makeConstructionSign, makeBird, makeBanknote, makePowerUp,
 } from './models.js';
 
@@ -53,10 +53,10 @@ export class Level {
   }
 
   // Stationary trucks park facing away, so their back ramp faces the player and can be climbed.
-  addTruck(lane, nearS, meet = null) {
+  addTruck(lane, nearS, meet = null, withRamp = true) {
     const { width, length, top, rampLength } = VEHICLE.truck;
     const model = makeTruck(meet ? 1 : -1, length);
-    if (!meet) {
+    if (!meet && withRamp) {
       this.addRamp(nearS, nearS + rampLength, top, LANES[lane], width);
       nearS += rampLength;
     }
@@ -80,7 +80,9 @@ export class Level {
   // Where a moving vehicle must be now so its front hits meetS `lead` seconds after the player.
   plannedS(e) {
     const { speed, meetS, lead } = e.moving;
-    const tPlayer = (meetS - this.playerS) / this.playerSpeed;
+    // Speed rises with distance, so use the average of now and at the meeting point.
+    const avgSpeed = (this.playerSpeed + speedAt(meetS)) / 2;
+    const tPlayer = (meetS - this.playerS) / avgSpeed;
     return meetS + e.d / 2 + speed * (tPlayer + lead);
   }
 
@@ -90,7 +92,7 @@ export class Level {
   }
 
   // --- platforms ---------------------------------------------------------
-  // `solid` decides what a frontal hit does: 'caught' (vehicles) or 'climb' (building walls).
+  // `solid` platforms kill on a head-on hit; ramps are only walked on.
 
   addRamp(s0, s1, height, x = 0, width = ROAD_HALF_WIDTH * 2) {
     const len = s1 - s0;
@@ -136,15 +138,21 @@ export class Level {
     }
     return this.add({
       kind: 'roof', s: s0 + len / 2, x: 0, w: ROAD_HALF_WIDTH * 2, d: len, mesh,
-      platform: { top: height }, solid: 'climb',
+      platform: { top: height }, solid: 'caught',
     });
   }
 
   // --- structures ------------------------------------------------------------
 
-  // Pillars stand on the lane dividers; you can only change lanes in the gaps between them.
-  addPillar(s, x) {
-    return this.add({ kind: 'pillar', s, x, w: 0.6, d: 0.9, y0: 0, y1: TUNNEL_HEIGHT, hazard: 'stumble', mesh: makePillar(TUNNEL_HEIGHT) });
+  // Overpass column standing in a lane: blocks it completely.
+  addPillar(s, lane) {
+    return this.add({ kind: 'pillar', s, lane, x: LANES[lane], w: 1.4, d: 1.4, y0: 0, y1: TUNNEL_HEIGHT, hazard: 'crash', mesh: makePillar(TUNNEL_HEIGHT) });
+  }
+
+  // Low barrier on a lane boundary (x = ±1.2). Blocks lane changes unless you jump over it.
+  addDivider(s0, s1, x) {
+    const len = s1 - s0;
+    return this.add({ kind: 'divider', s: s0 + len / 2, x, w: 0.45, d: len, y0: 0, y1: 1.1, hazard: 'crash', mesh: makeDivider(len, 1.1) });
   }
 
   // Divider wall in the middle lane. Running into its end is a crash.
@@ -163,18 +171,22 @@ export class Level {
   // y0..y1 is the vertical collision band above baseY.
 
   addCone(s, lane, baseY = 0) {
-    return this.add({ kind: 'cone', s, lane, x: LANES[lane], baseY, w: 0.7, d: 0.7, y0: 0, y1: 0.9, hazard: 'stumble', mesh: makeCone().root });
+    return this.add({ kind: 'cone', s, lane, x: LANES[lane], baseY, w: 0.7, d: 0.7, y0: 0, y1: 0.9, hazard: 'crash', mesh: makeCone().root });
+  }
+
+  addBarrier(s, lane, baseY = 0) {
+    return this.add({ kind: 'barrier', s, lane, x: LANES[lane], baseY, w: 2.0, d: 0.3, y0: 0, y1: 0.95, hazard: 'crash', mesh: makeLowBarrier() });
   }
 
   addSign(s, lane, baseY = 0) {
-    return this.add({ kind: 'sign', s, lane, x: LANES[lane], baseY, w: 2.1, d: 0.3, y0: 1.05, y1: 3.4, hazard: 'stumble', mesh: makeConstructionSign().root });
+    return this.add({ kind: 'sign', s, lane, x: LANES[lane], baseY, w: 2.1, d: 0.3, y0: 1.05, y1: 3.4, hazard: 'crash', mesh: makeConstructionSign().root });
   }
 
   addBird(s, lane, baseY = 0) {
     const model = makeBird();
     return this.add({
       kind: 'bird', s, lane, x: LANES[lane], baseY, yOff: 1.6, w: 0.9, d: 0.6, y0: 1.3, y1: 1.95,
-      hazard: 'stumble', mesh: model.root, rig: model, vel: -2.5,
+      hazard: 'crash', mesh: model.root, rig: model, vel: -2.5,
     });
   }
 
@@ -309,14 +321,17 @@ export class Level {
   }
 
   // Highest walkable surface under (x, s) that is not above maxY + stepUp. 0 = the street.
-  supportAt(x, s, maxY, stepUp) {
+  // Ramps are judged by their height at the previous position, so steep ramps still work at
+  // top speed, where one frame climbs more than stepUp.
+  supportAt(x, s, maxY, stepUp, prevS = s) {
     let best = 0;
     for (const e of this.entities) {
       if (!e.platform || e.dead) continue;
       if (Math.abs(x - e.x) > e.w / 2 + 0.1) continue;
       if (Math.abs(s - e.s) > e.d / 2 + 0.3) continue;
       const top = Level.topAt(e, s);
-      if (top <= maxY + stepUp && top > best) best = top;
+      const reach = e.platform.ramp ? Level.topAt(e, prevS) : top;
+      if (reach <= maxY + stepUp && top > best) best = top;
     }
     return best;
   }

@@ -8,7 +8,7 @@ export const PLAYER = {
   halfDepth: 0.3,
   height: 1.8,
   slideHeight: 0.8,
-  jumpVelocity: 14.5, // apex ~2.6 m: clears cones, birds, motorcycles, but not buses
+  jumpVelocity: 14.5, // apex ~2.6 m: clears cones, barriers, birds, motorcycles, but not buses
   gravity: 40,
   fastDropVelocity: -26,
   slideTime: 0.7,
@@ -16,17 +16,17 @@ export const PLAYER = {
   stepUp: 0.35, // max ledge height the player walks onto without jumping
 };
 
-export const SPEED = { start: 15, max: 34, accel: 0.12 };
+// Speed grows with distance run, so it ramps up quickly.
+export const SPEED = { start: 16, perMeter: 0.009, max: 42 };
+export const speedAt = (s) => Math.min(SPEED.max, SPEED.start + SPEED.perMeter * Math.max(0, s));
 
-// Pursuit gap is normalized: 1 = killer far behind, 0 = caught.
+// "Close call": a scrape brings the killer right onto your tail; a second scrape while he's close is fatal.
 export const PURSUIT = {
-  startGap: 0.7,
-  regen: 0.04, // per second
-  stumble: 0.65, // hitting a cone / sign / bird / pillar, climbing a wall
-  bump: 0.3, // side-swiping something while changing lanes
-  motorcycle: 0.3, // running through a motorcycle
-  nearZ: 1.3, // killer distance behind player at gap 0
-  farZ: 9, // killer distance behind player at gap 1
+  closeDuration: 7, // seconds without another scrape before he drops back
+  introDuration: 3.5, // he starts each run on your tail
+  closeZ: 2.4, // distance behind the player while close
+  farZ: 13, // distance while dropped back (off screen)
+  motorcycleSlow: 1.0, // seconds of reduced speed after running through a motorcycle
 };
 
 // Vehicles. Heights are the walkable roof height.
@@ -39,7 +39,7 @@ export const VEHICLE = {
 export const POWERUP = {
   magnet: { duration: 10, radius: 14 },
   pogo: { duration: 12, jumpVelocity: 21 }, // apex ~5.5 m: over signs, onto buses / trucks / roofs
-  glider: { duration: 9, startAltitude: 12, endAltitude: 4 },
+  glider: { duration: 5, altitude: 10, descent: 1.0 }, // short lift, glides down in the last second
   wings: { duration: 10, altitude: 9 },
   skateboard: { duration: 30, blastRadius: 90 },
 };

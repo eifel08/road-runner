@@ -1,6 +1,6 @@
 // Game state machine (menu -> playing -> caught -> menu), collision rules and scoring.
 import * as THREE from 'three';
-import { PLAYER, PURSUIT, SPEED, SCORE, POWERUP } from './config.js';
+import { PLAYER, PURSUIT, SPEED, SCORE, POWERUP, speedAt } from './config.js';
 import { Environment } from './environment.js';
 import { Level } from './level.js';
 import { Spawner } from './spawner.js';
@@ -82,7 +82,6 @@ export class Game {
   get speed() {
     let v = this.baseSpeed;
     if (this.player.slowT > 0) v *= 0.6;
-    if (this.player.stumbleT > 0) v *= 0.75;
     return v;
   }
 
@@ -98,7 +97,7 @@ export class Game {
   updatePlaying(dt) {
     const p = this.player;
     this.time += dt;
-    this.baseSpeed = Math.min(SPEED.max, SPEED.start + SPEED.accel * this.time);
+    this.baseSpeed = speedAt(this.s);
     for (const a of this.input.consume()) p.handle(a);
 
     this.prevS = this.s;
@@ -107,7 +106,7 @@ export class Game {
     this.level.setPlayer(this.s, this.speed);
     this.spawner.update(this.s, this.speed);
     this.level.update(dt);
-    p.update(dt, this.s, (x, s, maxY) => this.level.supportAt(x, s, maxY, PLAYER.stepUp));
+    p.update(dt, this.s, (x, s, maxY) => this.level.supportAt(x, s, maxY, PLAYER.stepUp, this.prevS));
     this.collide(dt);
     if (this.state !== 'playing') return;
 
@@ -117,7 +116,7 @@ export class Game {
     p.animate(dt, this.speed);
 
     this.ui.setHud(this.score, this.cash, p.power);
-    this.ui.setDanger(Math.max(0, 1 - this.pursuer.gap / 0.5) * 0.8);
+    this.ui.setDanger(this.pursuer.close ? 0.55 : 0);
   }
 
   // ------------------------------------------------------------ collisions
@@ -162,6 +161,10 @@ export class Game {
     if (p.power.magnet > 0) this.runMagnet(dt);
   }
 
+  // Crash rules: running into anything head-on is fatal (motorcycles only slow you down).
+  // Sliding into the side of something while changing lanes is a scrape: you bounce back
+  // and the killer gets close; a second scrape while he's close gets you caught.
+
   hitPlatform(e, top, wasBeside) {
     const p = this.player;
     if (p.invuln > 0) {
@@ -171,14 +174,8 @@ export class Game {
       return;
     }
     if (this.skateAbsorb()) return;
-    if (wasBeside) return this.sideBump();
-    if (e.solid === 'climb') {
-      // Ran into a building wall (missed a rooftop jump): scramble up, losing ground.
-      p.y = top;
-      p.vy = 0;
-      return this.stumble();
-    }
-    this.caught(); // head-on into a bus or truck
+    if (wasBeside) return this.scrape();
+    this.caught();
   }
 
   hitHazard(e, wasBeside) {
@@ -186,35 +183,25 @@ export class Game {
     if (p.invuln > 0) return;
     if (this.skateAbsorb()) return;
     if (e.hazard === 'slow') {
-      // Motorcycle: run right through it, but it costs speed.
+      // Motorcycle: run right through it. It costs speed and counts as a scrape.
       e.hit = true;
       this.level.knock(e, Math.sign(e.x - p.x) || 1);
-      p.slowT = 1.0;
-      if (this.pursuer.loseGround(PURSUIT.motorcycle)) this.caught();
+      p.slowT = PURSUIT.motorcycleSlow;
+      if (this.pursuer.scrape()) this.caught();
       return;
     }
-    if (wasBeside) return this.sideBump();
-    if (e.hazard === 'crash') return this.caught(); // the tunnel divider wall
-    e.hit = true;
-    if (e.kind !== 'pillar') this.level.knock(e, Math.sign(e.x - p.x) || 1);
-    this.stumble();
+    if (wasBeside) return this.scrape();
+    this.caught();
   }
 
-  stumble() {
-    const p = this.player;
-    p.stumbleT = 0.6;
-    p.invuln = 0.8;
-    this.shake = 0.25;
-    if (this.pursuer.loseGround(PURSUIT.stumble)) this.caught();
-  }
-
-  sideBump() {
+  scrape() {
     const p = this.player;
     if (p.invuln > 0) return;
     p.bounceBack();
-    p.invuln = 0.4;
-    this.shake = 0.15;
-    if (this.pursuer.loseGround(PURSUIT.bump)) this.caught();
+    p.stumbleT = 0.4;
+    p.invuln = 0.35;
+    this.shake = 0.2;
+    if (this.pursuer.scrape()) this.caught();
   }
 
   // ------------------------------------------------------------ skateboard blast
@@ -246,7 +233,7 @@ export class Game {
     }
     this.effects.shockwave(p.x, p.y + 0.3, 0);
     // The shockwave knocks the killer back too.
-    this.pursuer.gap = Math.max(this.pursuer.gap, 0.9);
+    this.pursuer.closeT = 0;
   }
 
   // ------------------------------------------------------------ pickups
@@ -258,7 +245,8 @@ export class Game {
       return;
     }
     this.player.activate(e.collect);
-    if (e.collect === 'wings' || e.collect === 'glider') this.spawner.airTrail(e.collect, this.s, this.speed);
+    if (e.collect === 'wings') this.spawner.wingsRun(this.s);
+    if (e.collect === 'glider') this.spawner.gliderRun(this.s);
   }
 
   runMagnet(dt) {

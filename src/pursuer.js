@@ -1,4 +1,5 @@
-// The killer chasing the player. `gap` (0..1) is how far behind he is; reaching 0 means caught.
+// The killer chasing the player, using a Subway Surfers style "close call" system:
+// a scrape brings him right onto your tail for a while; a second scrape while he's close is fatal.
 import { PURSUIT } from './config.js';
 import { makeHuman, KILLER_STYLE, poseRun } from './models.js';
 
@@ -13,38 +14,40 @@ export class Pursuer {
   }
 
   reset() {
-    this.gap = PURSUIT.startGap;
+    // Every run starts with him on your tail, then he drops back.
+    this.closeT = PURSUIT.introDuration;
     this.x = 0;
     this.y = 0;
-    this.z = this.distance;
+    this.z = PURSUIT.closeZ;
     this.phase = 0;
     this.rig.root.rotation.set(0, 0, 0);
     this.rig.root.visible = false;
   }
 
-  get distance() {
-    return lerp(PURSUIT.nearZ, PURSUIT.farZ, this.gap);
+  get close() {
+    return this.closeT > 0;
   }
 
-  // Returns true when the hit closes the gap completely.
-  loseGround(amount) {
-    this.gap -= amount;
-    return this.gap <= 0;
+  // A scrape. Returns true when he was already close, i.e. he catches you.
+  scrape() {
+    if (this.close) return true;
+    this.closeT = PURSUIT.closeDuration;
+    return false;
   }
 
   update(dt, player, speed) {
-    this.gap = Math.min(1, this.gap + PURSUIT.regen * dt);
+    this.closeT = Math.max(0, this.closeT - dt);
     // Chases slightly off to one side so the player stays visible.
     this.x = lerp(this.x, player.x + (player.x > 0 ? -0.8 : 0.8), Math.min(1, dt * 4));
     // He climbs after you onto cars and roofs, but stays on the ground while you fly.
     const targetY = player.flying ? 0 : player.y;
     this.y = lerp(this.y, targetY, Math.min(1, dt * 5));
-    this.z = lerp(this.z, this.distance, Math.min(1, dt * 3));
+    this.z = lerp(this.z, this.close ? PURSUIT.closeZ : PURSUIT.farZ, Math.min(1, dt * (this.close ? 4 : 1.2)));
     this.phase += dt * speed * 0.62;
 
     const r = this.rig;
     r.root.position.set(this.x, this.y, this.z);
-    r.root.visible = this.z < PURSUIT.farZ - 1.5;
+    r.root.visible = this.z < 8;
     poseRun(r, this.phase, 1.15);
     r.armR.rotation.x = 0.6 + Math.sin(this.phase) * 0.3; // knife arm forward, menacing
   }
