@@ -108,12 +108,26 @@ export class Environment {
     const depth = rand(8, 14);
     b.s = s;
     b.len = len;
+    b.height = height;
+    b.collapse = undefined;
     b.mesh.scale.set(depth, height, len);
     b.mesh.position.set(b.side * (ROAD_HALF_WIDTH + SIDEWALK_WIDTH + depth / 2), height / 2, 0);
     b.mesh.material = facadeMaterials()[Math.floor(Math.random() * facadeMaterials().length)];
   }
 
-  update(playerS) {
+  // Skateboard blast: buildings along [fromS, toS] crumble into the ground.
+  // Returns the render-space centers of the collapsing buildings (for debris).
+  collapse(fromS, toS, playerS) {
+    const hit = [];
+    for (const b of this.buildings) {
+      if (b.collapse !== undefined || b.s + b.len < fromS || b.s > toS) continue;
+      b.collapse = -Math.max(0, b.s - playerS) / 160; // ripple outward with the shockwave
+      hit.push({ x: b.mesh.position.x, z: playerS - (b.s + b.len / 2), size: b.len / 4, delay: -b.collapse });
+    }
+    return hit;
+  }
+
+  update(playerS, dt = 0) {
     // Scroll the road textures. Increasing the offset moves features toward the camera (+z).
     this.roadTex.offset.y = (playerS / ROAD_TILE) % 1;
     this.walkTex.offset.y = (playerS / WALK_TILE) % 1;
@@ -128,7 +142,16 @@ export class Environment {
         }
       }
     }
-    for (const b of this.buildings) b.mesh.position.z = playerS - (b.s + b.len / 2);
+    for (const b of this.buildings) {
+      b.mesh.position.z = playerS - (b.s + b.len / 2);
+      if (b.collapse !== undefined && b.collapse < 1) {
+        b.collapse = Math.min(1, b.collapse + dt / 0.8);
+        const f = Math.max(0, b.collapse);
+        const h = Math.max(0.3, b.height * (1 - f * f));
+        b.mesh.scale.y = h;
+        b.mesh.position.y = h / 2;
+      }
+    }
 
     const lampSpan = (this.lamps.length / 2) * LAMP_SPACING;
     for (const l of this.lamps) {

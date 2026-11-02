@@ -6,6 +6,7 @@ import { Level } from './level.js';
 import { Spawner } from './spawner.js';
 import { Player } from './player.js';
 import { Pursuer } from './pursuer.js';
+import { Effects } from './effects.js';
 
 const CAUGHT_DURATION = 2.2;
 const SKY = '#9fc6ee';
@@ -37,6 +38,7 @@ export class Game {
     this.spawner = new Spawner(this.level);
     this.player = new Player(this.scene);
     this.pursuer = new Pursuer(this.scene);
+    this.effects = new Effects(this.scene);
 
     this.state = 'menu';
     this.s = 0;
@@ -57,8 +59,8 @@ export class Game {
 
   start() {
     this.level.clear();
+    this.effects.clear();
     this.env.reset();
-    this.spawner.reset();
     this.player.reset();
     this.pursuer.reset();
     this.s = 0;
@@ -66,6 +68,8 @@ export class Game {
     this.time = 0;
     this.cash = 0;
     this.baseSpeed = SPEED.start;
+    this.level.setPlayer(0, SPEED.start);
+    this.spawner.reset();
     this.input.consume();
     this.state = 'playing';
     this.ui.showGame();
@@ -86,6 +90,7 @@ export class Game {
     if (this.state === 'playing') this.updatePlaying(dt);
     else if (this.state === 'caught') this.updateCaught(dt);
     else this.player.idle(dt);
+    this.effects.update(dt, this.state === 'playing' ? this.speed * dt : 0);
     this.updateCamera(dt);
     this.renderer.render(this.scene, this.camera);
   }
@@ -99,14 +104,15 @@ export class Game {
     this.prevS = this.s;
     this.s += this.speed * dt;
 
+    this.level.setPlayer(this.s, this.speed);
     this.spawner.update(this.s, this.speed);
-    this.level.update(dt, this.s);
+    this.level.update(dt);
     p.update(dt, this.s, (x, s, maxY) => this.level.supportAt(x, s, maxY, PLAYER.stepUp));
     this.collide(dt);
     if (this.state !== 'playing') return;
 
     this.pursuer.update(dt, p, this.speed);
-    this.env.update(this.s);
+    this.env.update(this.s, dt);
     this.level.sync(this.s);
     p.animate(dt, this.speed);
 
@@ -123,7 +129,7 @@ export class Game {
     const pTop = p.y + p.height;
 
     for (const e of this.level.entities) {
-      if (e.collected || e.hit || e.knocked !== undefined) continue;
+      if (e.collected || e.hit || e.dead) continue;
       // Swept overlap along the track (covers both player and entity movement this frame).
       const eMin = Math.min(e.s, e.prevS) - e.d / 2;
       const eMax = Math.max(e.s, e.prevS) + e.d / 2;
@@ -135,6 +141,7 @@ export class Game {
         if (Math.abs(p.x - e.x) < e.w / 2 + 0.35 && y > p.y - 0.4 && y < pTop + 0.4) this.pickUp(e);
         continue;
       }
+      if (p.flying) continue; // wings / glider fly safely over everything
 
       const reachX = e.w / 2 + PLAYER.halfWidth;
       if (Math.abs(p.x - e.x) >= reachX) continue;
@@ -157,6 +164,13 @@ export class Game {
 
   hitPlatform(e, top, wasBeside) {
     const p = this.player;
+    if (p.invuln > 0) {
+      // Just after a flight or a blast: never punish, pop up on top instead.
+      if (wasBeside) p.bounceBack();
+      else { p.y = top; p.vy = 0; }
+      return;
+    }
+    if (this.skateAbsorb()) return;
     if (wasBeside) return this.sideBump();
     if (e.solid === 'climb') {
       // Ran into a building wall (missed a rooftop jump): scramble up, losing ground.
@@ -164,33 +178,25 @@ export class Game {
       p.vy = 0;
       return this.stumble();
     }
-    // Head-on into a car.
-    if (p.power.pogo > 0) { p.y = top; p.vy = POWERUP.pogo.bounceVelocity; return; }
-    if (p.invuln > 0 || p.power.shield > 0) {
-      if (p.invuln <= 0) this.breakShield();
-      p.y = top;
-      p.vy = 0;
-      return;
-    }
-    this.caught();
+    this.caught(); // head-on into a bus or truck
   }
 
   hitHazard(e, wasBeside) {
     const p = this.player;
     if (p.invuln > 0) return;
+    if (this.skateAbsorb()) return;
     if (e.hazard === 'slow') {
-      // Motorcycle: run right through it, but it costs speed (unless shielded).
+      // Motorcycle: run right through it, but it costs speed.
       e.hit = true;
       this.level.knock(e, Math.sign(e.x - p.x) || 1);
-      if (p.power.shield > 0) return;
       p.slowT = 1.0;
       if (this.pursuer.loseGround(PURSUIT.motorcycle)) this.caught();
       return;
     }
     if (wasBeside) return this.sideBump();
+    if (e.hazard === 'crash') return this.caught(); // the tunnel divider wall
     e.hit = true;
-    this.level.knock(e, Math.sign(e.x - p.x) || 1);
-    if (p.power.shield > 0) return this.breakShield();
+    if (e.kind !== 'pillar') this.level.knock(e, Math.sign(e.x - p.x) || 1);
     this.stumble();
   }
 
@@ -208,15 +214,42 @@ export class Game {
     p.bounceBack();
     p.invuln = 0.4;
     this.shake = 0.15;
-    if (p.power.shield > 0) return;
     if (this.pursuer.loseGround(PURSUIT.bump)) this.caught();
   }
 
-  breakShield() {
-    this.player.power.shield = 0;
-    this.player.invuln = 1.0;
-    this.shake = 0.2;
+  // ------------------------------------------------------------ skateboard blast
+
+  // Any hit while riding the skateboard is absorbed: the board breaks and everything around is destroyed.
+  skateAbsorb() {
+    if (this.player.power.skateboard <= 0) return false;
+    this.skateBlast();
+    return true;
   }
+
+  skateBlast() {
+    const p = this.player;
+    p.power.skateboard = 0;
+    p.invuln = 2;
+    p.stumbleT = 0;
+    this.shake = 0.6;
+    this.ui.flash();
+
+    const from = this.s - 15;
+    const to = this.s + POWERUP.skateboard.blastRadius;
+    for (const e of this.level.blast(from, to)) {
+      const z = this.s - e.s;
+      const size = Math.min(6, Math.max(1, (e.d + (e.platform?.top ?? 1)) / 4));
+      this.effects.burst(e.x, e.baseY + 1, z, size, e.blastDelay);
+    }
+    for (const b of this.env.collapse(from, to, this.s)) {
+      this.effects.burst(b.x - Math.sign(b.x) * 4, 2, b.z, b.size, b.delay);
+    }
+    this.effects.shockwave(p.x, p.y + 0.3, 0);
+    // The shockwave knocks the killer back too.
+    this.pursuer.gap = Math.max(this.pursuer.gap, 0.9);
+  }
+
+  // ------------------------------------------------------------ pickups
 
   pickUp(e) {
     e.collected = true;
@@ -251,6 +284,7 @@ export class Game {
   // ------------------------------------------------------------ death
 
   caught() {
+    if (this.skateAbsorb()) return; // the board saves you, even from the killer
     this.state = 'caught';
     this.caughtT = 0;
     this.stabbed = 0;

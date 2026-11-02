@@ -3,13 +3,15 @@ import { HIGH_SCORE_KEY, POWERUP } from './config.js';
 
 const $ = (id) => document.getElementById(id);
 
-const POWER_LABELS = { magnet: 'MAGNET', pogo: 'POGO', glider: 'GLIDER', wings: 'METAL WINGS', shield: 'GIANT SHIELD' };
+const POWER_LABELS = { magnet: 'MAGNET', pogo: 'POGO STICK', glider: 'GLIDER', wings: 'METAL WINGS', skateboard: 'SKATEBOARD' };
 
 export class UI {
   constructor(onPlay) {
     this.menu = $('menu');
     this.hud = $('hud');
     this.vignette = $('vignette');
+    this.flashEl = $('flash');
+    this.flashEl.addEventListener('animationend', () => this.flashEl.classList.remove('on'));
     $('play').addEventListener('click', (e) => {
       e.currentTarget.blur(); // so Space doesn't re-trigger the button mid-run
       onPlay();
@@ -54,6 +56,13 @@ export class UI {
       $('powers').innerHTML = html;
       this.lastHud = html;
     }
+  }
+
+  // Bright flash for the skateboard blast.
+  flash() {
+    this.flashEl.classList.remove('on');
+    void this.flashEl.offsetWidth; // restart the CSS animation
+    this.flashEl.classList.add('on');
   }
 
   // Darkens the screen edges as the killer closes in (0..1).

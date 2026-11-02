@@ -169,6 +169,16 @@ export function posePogo(rig) {
   rig.armR.rotation.set(0.9, 0, -0.25);
 }
 
+// Surf stance on the skateboard: body turned sideways, knees bent, arms out for balance.
+export function poseSkate(rig, t) {
+  rig.body.rotation.set(0, 0.9, Math.sin(t * 2.5) * 0.06);
+  rig.body.position.set(0, 0.12 - 0.05 * Math.abs(Math.sin(t * 2.5)), 0);
+  rig.legL.rotation.x = 0.35;
+  rig.legR.rotation.x = -0.35;
+  rig.armL.rotation.set(0.2, 0, -1.2);
+  rig.armR.rotation.set(-0.2, 0, 1.2);
+}
+
 export function poseIdle(rig, t) {
   rig.body.rotation.set(0, 0, 0);
   rig.body.position.set(0, Math.sin(t * 2) * 0.01, 0);
@@ -222,6 +232,125 @@ export function makeMotorcycle() {
   part(box(0.8, 0.05, 0.05), metal('#aaa'), 0, 1.08, -0.66, root);
   part(box(0.16, 0.14, 0.06), basic('#fff7cc'), 0, 0.92, -0.72, root, false);
   return { root };
+}
+
+const BUS_COLORS = ['#e74c3c', '#f39c12', '#2980b9', '#27ae60'];
+
+// City bus, 11 m long and 3.15 m tall. `facing` +1 = front toward the player (+z).
+export function makeBus(facing = 1) {
+  const root = new THREE.Group();
+  const paint = lambert(BUS_COLORS[Math.floor(Math.random() * BUS_COLORS.length)]);
+  const glass = lambert('#22303d');
+  part(box(2.3, 2.65, 11), paint, 0, 1.75, 0, root);
+  part(box(2.32, 0.18, 11.02), lambert('#ecf0f1'), 0, 0.9, 0, root, false); // stripe
+  for (const sx of [-1.16, 1.16]) part(box(0.03, 0.95, 9.6), glass, sx, 2.25, 0, root, false); // side windows
+  part(box(2.1, 1.3, 0.04), glass, 0, 2.1, 5.51 * facing, root, false); // windshield
+  part(box(1.6, 0.3, 0.05), basic('#111'), 0, 2.88, 5.52 * facing, root, false); // route sign
+  part(box(1.5, 0.16, 0.06), basic('#ffb142'), 0, 2.88, 5.55 * facing, root, false);
+  for (const x of [-0.8, 0.8]) part(box(0.3, 0.18, 0.05), basic('#fff7cc'), x, 0.85, 5.52 * facing, root, false);
+  for (const x of [-0.8, 0.8]) part(box(0.3, 0.18, 0.05), basic('#c0392b'), x, 0.85, -5.52 * facing, root, false);
+  part(box(1.4, 0.25, 2.2), lambert('#bdc3c7'), 0, 3.2, 0, root); // roof AC unit
+  const wheels = [];
+  for (const sx of [-1.05, 1.05]) {
+    for (const sz of [-3.6, 3.6]) {
+      const w = part(cyl(0.48, 0.48, 0.3, 14), lambert('#1a1a1a'), sx, 0.48, sz, root);
+      w.rotation.z = Math.PI / 2;
+      wheels.push(w);
+    }
+  }
+  return { root, wheels };
+}
+
+// Car carrier. The deck runs the whole length at 3.4 m; the cab is at the front.
+// `facing` -1 = front away from the player, so the back (ramp end) faces the player.
+export function makeTruck(facing = -1, length = 15) {
+  const root = new THREE.Group();
+  const frame = lambert('#57606f');
+  const half = length / 2;
+  const cabLen = 2.6;
+  part(box(2.3, 3.3, cabLen), lambert('#e1b12c'), 0, 1.65, (half - cabLen / 2) * facing, root); // cab
+  part(box(2.1, 1.1, 0.04), lambert('#22303d'), 0, 2.4, (half + 0.01) * facing, root, false);
+  for (const x of [-0.8, 0.8]) part(box(0.3, 0.2, 0.05), basic('#fff7cc'), x, 0.9, (half + 0.02) * facing, root, false);
+  const trailerLen = length - cabLen;
+  const trailerZ = -(cabLen / 2) * facing;
+  part(box(2.3, 0.18, trailerLen), frame, 0, 0.9, trailerZ, root); // lower deck
+  part(box(2.3, 0.2, length), lambert('#747d8c'), 0, 3.3, 0, root); // top deck (walkable)
+  for (let z = -trailerLen / 2 + 0.6; z <= trailerLen / 2 - 0.5; z += 2.2) {
+    for (const sx of [-1.1, 1.1]) part(box(0.12, 2.3, 0.12), frame, sx, 2.1, trailerZ + z, root);
+  }
+  // Cars riding on the lower deck (decoration).
+  for (let k = 0; k < 2; k++) {
+    const car = makeCar(undefined, facing).root;
+    car.scale.setScalar(0.85);
+    car.position.set(0, 1.0, trailerZ + (k - 0.5) * (trailerLen / 2));
+    root.add(car);
+  }
+  const wheels = [];
+  for (const sx of [-1.05, 1.05]) {
+    for (const z of [-half + 1.2, -half + 2.4, half - 1.4]) {
+      const w = part(cyl(0.45, 0.45, 0.3, 14), lambert('#1a1a1a'), sx, 0.45, z, root);
+      w.rotation.z = Math.PI / 2;
+      wheels.push(w);
+    }
+  }
+  return { root, wheels };
+}
+
+// Ramp slab rising toward -z: one lane wide (truck ramps) or the whole road (rooftop ramps).
+export function makeRamp(width, length, height, color = '#b8862b') {
+  const root = new THREE.Group();
+  const slope = Math.atan2(height, length);
+  const slab = part(box(width, 0.25, Math.hypot(length, height)), lambert(color), 0, height / 2 - 0.12, 0, root);
+  slab.rotation.x = slope;
+  slab.receiveShadow = true;
+  const stripes = Math.max(3, Math.round(length / 1.8));
+  for (let i = 0; i < stripes; i++) {
+    const f = (i + 0.5) / stripes;
+    const st = part(box(width + 0.02, 0.26, 0.3), lambert(i % 2 ? '#222' : '#f1c40f'), 0, height * f - 0.12, length / 2 - length * f, root, false);
+    st.rotation.x = slope;
+  }
+  return root;
+}
+
+export function makePillar(height) {
+  const root = new THREE.Group();
+  part(box(0.6, height, 0.9), lambert('#8395a7'), 0, height / 2, 0, root);
+  part(box(0.8, 0.4, 1.1), lambert('#576574'), 0, 0.2, 0, root);
+  part(box(0.62, 0.5, 0.92), lambert('#f1c40f'), 0, 1.0, 0, root, false);
+  return root;
+}
+
+const chevronTexture = () => cached(matCache, 'chevTex', () => canvasTexture(128, 128, (ctx, w, h) => {
+  ctx.fillStyle = '#f1c40f';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#111';
+  for (let i = -h; i < w; i += 32) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0); ctx.lineTo(i + 16, 0); ctx.lineTo(i + 16 + h, h); ctx.lineTo(i + h, h);
+    ctx.fill();
+  }
+}));
+const chevronMat = () => cached(matCache, 'chevMat', () => new THREE.MeshLambertMaterial({ map: chevronTexture() }));
+
+// Concrete divider wall down the middle lane (dual tunnels).
+export function makeWall(length, height) {
+  const root = new THREE.Group();
+  part(box(2.0, height, length), lambert('#95a5a6'), 0, height / 2, 0, root).receiveShadow = true;
+  part(box(2.02, height, 0.1), chevronMat(), 0, height / 2, length / 2 + 0.03, root, false); // entrance face
+  return root;
+}
+
+// Overhead slab + outer walls for a tunnel / overpass section.
+export function makeTunnelShell(length, height) {
+  const root = new THREE.Group();
+  part(box(10.4, 0.6, length), lambert('#7f8c8d'), 0, height + 0.3, 0, root, false);
+  for (const sx of [-1, 1]) part(box(0.5, height, length), lambert('#6c7a89'), sx * 5.05, height / 2, 0, root, false);
+  part(box(12, 2.6, 0.8), lambert('#636e72'), 0, height + 1.3, length / 2, root, false); // entrance facade
+  part(box(10.4, 0.5, 0.05), chevronMat(), 0, height - 0.15, length / 2 + 0.31, root, false);
+  for (let z = -length / 2 + 4; z < length / 2; z += 8) {
+    for (const x of [-2.4, 2.4]) part(box(0.8, 0.08, 0.3), basic('#fff3c4'), x, height - 0.04, z, root, false);
+  }
+  return root;
 }
 
 // ---------------------------------------------------------------- obstacles
@@ -321,7 +450,7 @@ export function makeBanknote() {
   return { root };
 }
 
-export const POWER_COLORS = { magnet: '#ff4757', pogo: '#ffa502', glider: '#1e90ff', wings: '#a4b0be', shield: '#ffd23f' };
+export const POWER_COLORS = { magnet: '#ff4757', pogo: '#ffa502', glider: '#1e90ff', wings: '#dfe4ea', skateboard: '#2ed573' };
 
 function magnetIcon(root) {
   const u = part(torus(0.24, 0.09, Math.PI), lambert('#e74c3c'), 0, 0.05, 0, root);
@@ -385,14 +514,21 @@ export function makeGliderGear() {
   return root;
 }
 
-export function makeShieldGear(radius = 1.05) {
+// Hoverboard-style skateboard; deck along z so the rider surfs forward.
+export function makeSkateboard() {
   const root = new THREE.Group();
-  const disk = part(cyl(radius, radius, 0.1, 28), metal('#3d6fb6'), 0, 0, 0, root);
-  disk.rotation.x = Math.PI / 2;
-  part(torus(radius, 0.07), metal('#ffd23f'), 0, 0, 0, root);
-  part(torus(radius * 0.55, 0.05), metal('#ffd23f'), 0, 0, 0, root);
-  const boss = part(sphere(radius * 0.2), metal('#ffd23f'), 0, 0, 0, root);
-  boss.scale.z = 0.5;
+  part(box(0.62, 0.07, 1.5), lambert('#2ed573'), 0, 0.16, 0, root);
+  part(box(0.5, 0.075, 1.2), lambert('#1e272e'), 0, 0.165, 0, root, false); // grip tape
+  part(box(0.12, 0.08, 0.5), lambert('#ffd23f'), 0, 0.2, 0, root, false); // stripe
+  for (const z of [-0.5, 0.5]) {
+    part(box(0.5, 0.05, 0.08), metal('#aaa'), 0, 0.1, z, root);
+    for (const x of [-0.24, 0.24]) {
+      const w = part(cyl(0.07, 0.07, 0.07, 10), lambert('#ff6b81'), x, 0.07, z, root);
+      w.rotation.z = Math.PI / 2;
+    }
+  }
+  // Glow strip underneath so it reads as a power-up board.
+  part(box(0.5, 0.02, 1.3), basic('#7bed9f'), 0, 0.11, 0, root, false);
   return root;
 }
 
@@ -400,13 +536,13 @@ export function makePowerUp(type) {
   const root = new THREE.Group();
   const icon = new THREE.Group();
   root.add(icon);
-  const bubble = new THREE.Mesh(sphere(0.62, 16), basic(POWER_COLORS[type], { transparent: true, opacity: 0.28, depthWrite: false }));
+  const bubble = new THREE.Mesh(sphere(0.7, 16), basic(POWER_COLORS[type], { transparent: true, opacity: 0.3, depthWrite: false }));
   root.add(bubble);
   if (type === 'magnet') magnetIcon(icon);
   if (type === 'pogo') { const p = makePogoGear(); p.scale.setScalar(0.42); p.position.y = -0.1; icon.add(p); }
-  if (type === 'glider') { const g = makeGliderGear(); g.scale.setScalar(0.2); g.rotation.x = 1.0; icon.add(g); }
+  if (type === 'glider') { const g = makeGliderGear(); g.scale.setScalar(0.24); g.rotation.x = 1.0; g.position.y = 0.15; icon.add(g); }
   if (type === 'wings') { const w = makeWingsGear().root; w.scale.setScalar(0.5); w.position.y = 0.08; icon.add(w); }
-  if (type === 'shield') { const s = makeShieldGear(0.4); icon.add(s); }
+  if (type === 'skateboard') { const b = makeSkateboard(); b.scale.setScalar(0.62); b.rotation.set(0.5, 0, 0.6); b.position.y = -0.1; icon.add(b); }
   return { root, icon };
 }
 
