@@ -7,7 +7,7 @@ import { LANES, SPAWN, ROAD_HALF_WIDTH, VEHICLE, TUNNEL_HEIGHT, speedAt } from '
 import {
   box, facadeMaterials, lambert,
   makeBus, makeTruck, makeRamp, makePillar, makeWall, makeTunnelShell, makeDivider, makeLowBarrier,
-  makeMotorcycle, makeCone, makeConstructionSign, makeBird, makeBanknote, makePowerUp,
+  makeMotorcycle, makeCone, makeConstructionSign, makeGate, makeBanknote, makePowerUp,
 } from './models.js';
 
 // Moving vehicles re-time themselves against the player's current speed until this close.
@@ -92,7 +92,8 @@ export class Level {
   }
 
   // --- platforms ---------------------------------------------------------
-  // `solid` platforms kill on a head-on hit; ramps are only walked on.
+  // `solid` platforms kill on a head-on hit ('caught'); ramps are walked up, and running into
+  // their solid underside ('ramp') is only a scrape.
 
   addRamp(s0, s1, height, x = 0, width = ROAD_HALF_WIDTH * 2) {
     const len = s1 - s0;
@@ -110,7 +111,7 @@ export class Level {
     }
     return this.add({
       kind: 'ramp', s: s0 + len / 2, x, w: width, d: len, mesh,
-      platform: { ramp: { s0, s1, height } }, solid: null,
+      platform: { ramp: { s0, s1, height } }, solid: 'ramp', // filled underneath: hitting it is a scrape
     });
   }
 
@@ -182,12 +183,9 @@ export class Level {
     return this.add({ kind: 'sign', s, lane, x: LANES[lane], baseY, w: 2.1, d: 0.3, y0: 1.05, y1: 3.4, hazard: 'crash', mesh: makeConstructionSign().root });
   }
 
-  addBird(s, lane, baseY = 0) {
-    const model = makeBird();
-    return this.add({
-      kind: 'bird', s, lane, x: LANES[lane], baseY, yOff: 1.6, w: 0.9, d: 0.6, y0: 1.3, y1: 1.95,
-      hazard: 'crash', mesh: model.root, rig: model, vel: -2.5,
-    });
+  // Roadwork gate: a beam at 1.3–1.9 m. Jump over it or roll under it.
+  addGate(s, lane, baseY = 0) {
+    return this.add({ kind: 'gate', s, lane, x: LANES[lane], baseY, w: 2.2, d: 0.3, y0: 1.3, y1: 1.9, hazard: 'crash', mesh: makeGate().root });
   }
 
   addMotorcycle(s, lane, baseY = 0) {
@@ -230,12 +228,6 @@ export class Level {
       if (e.kind === 'power') {
         e.rig.icon.rotation.y += dt * 2;
         e.mesh.position.y = e.baseY + e.yOff + Math.sin(e.t * 3) * 0.15;
-      }
-      if (e.kind === 'bird') {
-        const flap = Math.sin(e.t * 14) * 0.7;
-        e.rig.wingL.rotation.z = flap;
-        e.rig.wingR.rotation.z = -flap;
-        e.yOff = 1.6 + Math.sin(e.t * 3) * 0.08;
       }
       if (e.knocked !== undefined) this.animateKnocked(e, dt);
       if (e.blasted !== undefined) this.animateBlasted(e, dt);

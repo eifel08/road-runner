@@ -71,6 +71,10 @@ export class Pursuer {
     r.legL.rotation.x = 0.4;
     r.legR.rotation.x = -0.3;
     r.armL.rotation.set(0.9, 0, 0.3);
+    r.elbowL.rotation.x = 0.8;
+    r.elbowR.rotation.x = 0.15; // arm nearly straight for the strike
+    r.kneeL.rotation.x = -0.5;
+    r.kneeR.rotation.x = -0.3;
 
     // Knife arm: raised overhead = 2.9 rad, striking forward-down = 1.1 rad.
     const RAISED = 2.9, STRIKE = 1.1;

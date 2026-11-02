@@ -1,6 +1,7 @@
 // Game state machine (menu -> playing -> caught -> menu), collision rules and scoring.
 import * as THREE from 'three';
-import { PLAYER, PURSUIT, SPEED, SCORE, POWERUP, speedAt } from './config.js';
+import { PLAYER, PURSUIT, SPEED, SCORE, POWERUP, speedAtTime } from './config.js';
+import { poseDead } from './models.js';
 import { Environment } from './environment.js';
 import { Level } from './level.js';
 import { Spawner } from './spawner.js';
@@ -8,7 +9,9 @@ import { Player } from './player.js';
 import { Pursuer } from './pursuer.js';
 import { Effects } from './effects.js';
 
-const CAUGHT_DURATION = 2.2;
+const CAUGHT_DURATION = 2.6;
+// Low obstacles you can come down on from above (a stumble instead of a crash).
+const LANDABLE = new Set(['cone', 'barrier', 'sign', 'gate']);
 const SKY = '#9fc6ee';
 
 export class Game {
@@ -67,6 +70,7 @@ export class Game {
     this.prevS = 0;
     this.time = 0;
     this.cash = 0;
+    this.distScore = 0;
     this.baseSpeed = SPEED.start;
     this.level.setPlayer(0, SPEED.start);
     this.spawner.reset();
@@ -76,7 +80,7 @@ export class Game {
   }
 
   get score() {
-    return Math.floor(this.s * SCORE.perMeter) + this.cash * SCORE.perNote;
+    return Math.floor(this.distScore) + this.cash * SCORE.perNote;
   }
 
   get speed() {
@@ -97,11 +101,13 @@ export class Game {
   updatePlaying(dt) {
     const p = this.player;
     this.time += dt;
-    this.baseSpeed = speedAt(this.s);
+    this.baseSpeed = speedAtTime(this.time);
     for (const a of this.input.consume()) p.handle(a);
 
     this.prevS = this.s;
     this.s += this.speed * dt;
+    // Distance score; the 2x multiplier doubles the rate while it's active.
+    this.distScore += (this.s - this.prevS) * SCORE.perMeter * (p.power.multiplier > 0 ? POWERUP.multiplier.factor : 1);
 
     this.level.setPlayer(this.s, this.speed);
     this.spawner.update(this.s, this.speed);
@@ -123,21 +129,24 @@ export class Game {
 
   collide(dt) {
     const p = this.player;
-    const pMinS = this.prevS - PLAYER.halfDepth;
-    const pMaxS = this.s + PLAYER.halfDepth;
     const pTop = p.y + p.height;
+    const wings = p.power.wings > 0;
 
     for (const e of this.level.entities) {
       if (e.collected || e.hit || e.dead) continue;
       // Swept overlap along the track (covers both player and entity movement this frame).
+      // Banknotes get a bigger hitbox while flying with the metal wings.
+      const pad = wings && e.kind === 'cash' ? 0.6 : 0;
       const eMin = Math.min(e.s, e.prevS) - e.d / 2;
       const eMax = Math.max(e.s, e.prevS) + e.d / 2;
-      if (pMaxS < eMin || pMinS > eMax) continue;
+      if (this.s + PLAYER.halfDepth + pad < eMin || this.prevS - PLAYER.halfDepth - pad > eMax) continue;
 
       if (e.collect) {
-        if (e.kind === 'cash' && p.power.magnet > 0) continue; // handled by the magnet
+        if (e.magnet) continue; // being pulled in by the magnet / pogo stick
         const y = e.baseY + e.yOff;
-        if (Math.abs(p.x - e.x) < e.w / 2 + 0.35 && y > p.y - 0.4 && y < pTop + 0.4) this.pickUp(e);
+        const rx = e.w / 2 + (pad ? 0.95 : 0.35);
+        const ry = pad ? 1.0 : 0.4;
+        if (Math.abs(p.x - e.x) < rx && y > p.y - ry && y < pTop + ry) this.pickUp(e);
         continue;
       }
       if (p.flying) continue; // wings / glider fly safely over everything
@@ -147,18 +156,17 @@ export class Game {
       const wasBeside = Math.abs(p.prevX - e.x) >= reachX; // we slid into its side while changing lanes
 
       if (e.platform) {
-        if (!e.solid) continue; // ramps are only walked on
         const top = Level.topAt(e, this.s);
         if (p.y >= top - PLAYER.stepUp || pTop <= e.baseY) continue;
         this.hitPlatform(e, top, wasBeside);
       } else if (e.hazard) {
         if (p.y >= e.baseY + e.y1 || pTop <= e.baseY + e.y0) continue;
-        this.hitHazard(e, wasBeside);
+        this.hitHazard(e, wasBeside, this.entryHeight(e));
       }
       if (this.state !== 'playing') return;
     }
 
-    if (p.power.magnet > 0) this.runMagnet(dt);
+    this.attract(dt);
   }
 
   // Crash rules: running into anything head-on is fatal (motorcycles only slow you down).
@@ -175,10 +183,26 @@ export class Game {
     }
     if (this.skateAbsorb()) return;
     if (wasBeside) return this.scrape();
+    if (e.solid === 'ramp') {
+      // The space under a ramp is filled in: you bump into it and end up on the ramp, never under it.
+      p.y = top;
+      p.vy = 0;
+      return this.scrape(false);
+    }
     this.caught();
   }
 
-  hitHazard(e, wasBeside) {
+  // Player height at the moment, within this frame, that their front crossed into the obstacle.
+  // Tells landing on top of something apart from running into its face.
+  entryHeight(e) {
+    const p = this.player;
+    const face = Math.min(e.s, e.prevS) - e.d / 2;
+    const moved = this.s - this.prevS;
+    const f = moved > 0 ? Math.min(1, Math.max(0, (face - (this.prevS + PLAYER.halfDepth)) / moved)) : 0;
+    return p.prevY + (p.y - p.prevY) * f;
+  }
+
+  hitHazard(e, wasBeside, entryY) {
     const p = this.player;
     if (p.invuln > 0) return;
     if (this.skateAbsorb()) return;
@@ -190,14 +214,21 @@ export class Game {
       if (this.pursuer.scrape()) this.caught();
       return;
     }
+    if (LANDABLE.has(e.kind) && entryY >= e.baseY + e.y1 - 0.1) {
+      // Came down on top of a low obstacle rather than running into it: a stumble, not a crash.
+      e.hit = true;
+      this.level.knock(e, Math.sign(e.x - p.x) || 1);
+      p.vy = Math.max(p.vy, 5);
+      return this.scrape(false);
+    }
     if (wasBeside) return this.scrape();
     this.caught();
   }
 
-  scrape() {
+  scrape(bounce = true) {
     const p = this.player;
     if (p.invuln > 0) return;
-    p.bounceBack();
+    if (bounce) p.bounceBack();
     p.stumbleT = 0.4;
     p.invuln = 0.35;
     this.shake = 0.2;
@@ -249,16 +280,24 @@ export class Game {
     if (e.collect === 'glider') this.spawner.gliderRun(this.s);
   }
 
-  runMagnet(dt) {
+  // Banknotes flying to the player: the magnet grabs everything nearby, and the pogo stick
+  // pulls up any notes directly underneath you while you're in the air.
+  attract(dt) {
     const p = this.player;
+    const magnet = p.power.magnet > 0;
+    const pogo = p.power.pogo > 0 && !p.grounded;
     const target = new THREE.Vector3(p.x, p.y + 1, this.s);
     const pos = new THREE.Vector3();
     const step = (30 + this.speed) * dt;
     for (const e of this.level.entities) {
       if (e.kind !== 'cash' || e.collected) continue;
-      const ds = e.s - this.s;
-      if (!e.magnet && (ds > POWERUP.magnet.radius || ds < -2)) continue;
-      e.magnet = true;
+      if (!e.magnet) {
+        const ds = e.s - this.s;
+        const byMagnet = magnet && ds <= POWERUP.magnet.radius && ds >= -2;
+        const byPogo = pogo && Math.abs(e.x - p.x) < 1.0 && Math.abs(ds) < 3 && e.baseY < p.y + 0.5;
+        if (!byMagnet && !byPogo) continue;
+        e.magnet = true;
+      }
       pos.set(e.x, e.baseY, e.s);
       const dist = pos.distanceTo(target);
       if (dist < 0.8) { this.pickUp(e); continue; }
@@ -276,6 +315,7 @@ export class Game {
     this.state = 'caught';
     this.caughtT = 0;
     this.stabbed = 0;
+    this.pooled = false;
     this.finalScore = this.score;
     this.player.rig.root.visible = true;
     this.ui.setDanger(0.9);
@@ -290,11 +330,18 @@ export class Game {
     while (this.stabbed < Pursuer.STAB_TIMES.length && t >= Pursuer.STAB_TIMES[this.stabbed]) {
       this.stabbed++;
       this.shake = 0.3;
+      this.effects.blood(p.x, p.y + 1.2, 0.2, 1 + this.stabbed);
+      this.ui.bloodSplat(this.stabbed === 1 ? 5 : 9);
+    }
+    if (t > 1.1 && !this.pooled) {
+      this.pooled = true;
+      this.effects.bloodPool(p.x, p.y + 0.02, -0.6);
     }
     // Player freezes on the first stab, then collapses forward.
     if (t > 0.65) {
       const fall = Math.min(1, (t - 0.65) / 0.45);
       p.rig.root.rotation.x = -(Math.PI / 2) * fall * fall;
+      poseDead(p.rig);
       p.rig.root.position.y = Math.max(0, p.y);
     } else {
       p.rig.body.rotation.set(0.15, 0, 0);

@@ -1,7 +1,7 @@
 // The runner: lane changes, jump / slide physics, power-up movement modes and animation.
 import { LANES, PLAYER, POWERUP } from './config.js';
 import {
-  makeHuman, PLAYER_STYLE, makeWingsGear, makeGliderGear, makePogoGear, makeSkateboard,
+  makeHuman, PLAYER_STYLE, makeWingsGear, makeGliderGear, makePogoGear, makeSkateboard, makeBootGear,
   poseRun, poseJump, poseSlide, poseFly, poseHang, posePogo, poseSkate, poseIdle,
 } from './models.js';
 
@@ -18,7 +18,10 @@ export class Player {
       glider: makeGliderGear(),
       pogo: makePogoGear(),
       skateboard: makeSkateboard(),
+      boots: makeBootGear(),
     };
+    this.rig.footL.add(this.gear.boots.left);
+    this.rig.footR.add(this.gear.boots.right);
     this.gear.wings.root.position.set(0, 1.45, 0.2);
     this.rig.body.add(this.gear.wings.root);
     this.gear.glider.position.set(0, 2.9, 0);
@@ -41,12 +44,13 @@ export class Player {
     this.grounded = true;
     this.airTime = 0;
     this.pogoJump = false;
+    this.doubleJumped = false;
     this.slideT = 0;
     this.slideQueued = false;
     this.invuln = 0;
     this.stumbleT = 0;
     this.slowT = 0;
-    this.power = { magnet: 0, pogo: 0, glider: 0, wings: 0, skateboard: 0 };
+    this.power = { magnet: 0, pogo: 0, glider: 0, wings: 0, skateboard: 0, boots: 0, multiplier: 0 };
     this.phase = 0;
     this.t = 0;
     this.rig.root.rotation.set(0, 0, 0);
@@ -82,6 +86,11 @@ export class Player {
       this.grounded = false;
       this.airTime = COYOTE_TIME;
       this.slideT = 0;
+    } else if (action === 'jump' && this.power.boots > 0 && !this.doubleJumped) {
+      // Super Boots: one more jump in mid-air.
+      this.doubleJumped = true;
+      this.vy = Math.max(this.vy, POWERUP.boots.doubleJumpVelocity);
+      this.slideQueued = false;
     }
     if (action === 'slide') {
       if (this.grounded) {
@@ -151,6 +160,7 @@ export class Player {
       this.grounded = true;
       this.airTime = 0;
       this.pogoJump = false;
+      this.doubleJumped = false;
       if (this.slideQueued) {
         this.slideT = PLAYER.slideTime;
         this.slideQueued = false;
@@ -181,6 +191,7 @@ export class Player {
       pogo.rotation.set(0.25, 0, -0.5);
     }
     this.gear.skateboard.visible = this.power.skateboard > 0 && !this.flying;
+    this.gear.boots.left.visible = this.gear.boots.right.visible = this.power.boots > 0;
   }
 
   animate(dt, speed) {

@@ -3,13 +3,12 @@
 //
 // Speed is a function of distance (speedAt), so every pattern is sized for the speed the
 // player will actually have when they reach it.
-import { LANES, PLAYER, POWERUP, ROOF_HEIGHT, SPAWN, VEHICLE, speedAt } from './config.js';
+import { LANES, PLAYER, POWERUP, ROOF_HEIGHT, SPAWN, VEHICLE, speedAt, difficultyAt } from './config.js';
 import { Level } from './level.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const randInt = (a, b) => Math.floor(rand(a, b + 1));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-const smooth = (t) => t * t * (3 - 2 * t);
 const shuffle = (arr) => {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -28,8 +27,9 @@ function pickWeighted(weights) {
 // Next lane on a shifting open path: always moves one lane over.
 const shiftLane = (l) => (l === 1 ? pick([0, 2]) : 1);
 
-const POWER_TYPES = { magnet: 3, skateboard: 2.5, pogo: 2, glider: 2, wings: 2 };
-const PATTERNS = { row: 4, vehicleChain: 1.2, riskLine: 1, busTrain: 0.9, stagger: 1, jumpRoll: 0.9 };
+const POWER_TYPES = { magnet: 3, skateboard: 2.5, pogo: 2, glider: 2, wings: 2, boots: 2, multiplier: 2 };
+// Pattern weights at full difficulty; early on, plain rows dominate (see pickPattern).
+const PATTERNS = { vehicleChain: 1.2, riskLine: 1, busTrain: 0.9, stagger: 1, jumpRoll: 0.9 };
 const SECTIONS = ['pillars', 'tunnel', 'rooftops'];
 const NOTE_Y = 1.0;
 const NOTE_STEP = 2.2;
@@ -45,15 +45,23 @@ export class Spawner {
 
   reset() {
     this.nextS = 40;
-    this.nextSection = rand(220, 320);
+    this.nextSection = rand(380, 480);
     this.sectionQueue = [];
     this.nextPower = rand(80, 140);
     this.laneFreeAt = [0, 0, 0]; // each lane is occupied (by a long / moving vehicle) until this s
   }
 
-  // Gap between consecutive rows / patterns: short, but always enough time to react.
-  gap(v) {
-    return 7 + v * 0.32 + rand(0, 4);
+  // Gap between consecutive rows / patterns. Roomy at the start of a run, tightening as
+  // difficulty grows, but always leaving enough time to react at the current speed.
+  gap(v, s) {
+    return (7 + v * 0.32 + rand(0, 4)) * (1.7 - 0.7 * difficultyAt(s));
+  }
+
+  // Early on almost everything is a plain row; set pieces become common as difficulty grows.
+  pickPattern(s) {
+    const d = difficultyAt(s);
+    if (s < 200) return 'row';
+    return pickWeighted({ row: 4 * (1.6 - d), ...Object.fromEntries(Object.entries(PATTERNS).map(([k, w]) => [k, w * (0.25 + 0.75 * d)])) });
   }
 
   update(playerS) {
@@ -65,19 +73,19 @@ export class Spawner {
       if (s >= this.nextSection && Math.max(...this.laneFreeAt) <= s + 4) {
         if (!this.sectionQueue.length) this.sectionQueue = shuffle([...SECTIONS]);
         const end = this[this.sectionQueue.pop()](this.clearPoint(s), v);
-        this.nextS = end + this.gap(v);
+        this.nextS = end + this.gap(v, s);
         this.nextSection = end + rand(150, 260);
         continue;
       }
-      let type = s < 100 ? 'row' : pickWeighted(PATTERNS);
+      let type = this.pickPattern(s);
       // Full-width patterns wait for free lanes; rather than leave the road empty, do a row instead.
       if (type !== 'row' && type !== 'riskLine' && Math.max(...this.laneFreeAt) > s + 4) type = 'row';
       if (type === 'row') {
         this.spawnRow(s, v);
-        this.nextS = s + this.gap(v);
+        this.nextS = s + this.gap(v, s);
       } else {
         const end = this[type](type === 'riskLine' ? s : Math.max(s, ...this.laneFreeAt), v);
-        this.nextS = end + this.gap(v);
+        this.nextS = end + this.gap(v, s);
       }
     }
   }
@@ -92,7 +100,7 @@ export class Spawner {
   }
 
   difficulty(s) {
-    return Math.min(1, s / 2500);
+    return difficultyAt(s);
   }
 
   maybePowerUp(s, lane) {
@@ -120,15 +128,15 @@ export class Spawner {
     // Lanes still occupied by a long / moving vehicle count as blocked, so put them first.
     const reserved = (lane) => (s < this.laneFreeAt[lane] ? 1 : 0);
     const lanes = shuffle([0, 1, 2]).sort((a, b) => reserved(b) - reserved(a));
-    const blockedCount = Math.max(Math.random() < 0.45 + 0.35 * diff ? 2 : 1, reserved(lanes[0]) + reserved(lanes[1]));
+    const blockedCount = Math.max(Math.random() < 0.15 + 0.6 * diff ? 2 : 1, reserved(lanes[0]) + reserved(lanes[1]));
     const placed = {};
 
     for (let i = 0; i < blockedCount; i++) {
       const lane = lanes[i];
       if (reserved(lane)) continue;
       const type = pickWeighted({
-        cone: 2, barrier: 2, sign: 2.5, bird: 1 + 1.5 * diff, moto: 1.2,
-        bus: 1.6, truck: 1.8, movingBus: 0.8 + 1.6 * diff, movingTruck: 0.3 + 0.6 * diff,
+        cone: 2, barrier: 2, sign: 2.5, gate: 1 + 1.5 * diff, moto: 1.2,
+        bus: 1.6, truck: 1.8, movingBus: 0.4 + 2 * diff, movingTruck: 0.1 + 0.8 * diff,
       });
       placed[lane] = type;
       this.placeObstacle(type, s, lane);
@@ -138,7 +146,7 @@ export class Spawner {
     if (reserved(freeLane)) return;
     // Two lanes taken by long / moving vehicles: keep the open lane lively with something to jump or roll under.
     if (reserved(lanes[0]) && reserved(lanes[1]) && Math.random() < 0.6) {
-      this.placeObstacle(pick(['cone', 'barrier', 'sign', 'bird']), s, freeLane);
+      this.placeObstacle(pick(['cone', 'barrier', 'sign', 'gate']), s, freeLane);
       return;
     }
     if (this.maybePowerUp(s, freeLane)) return;
@@ -151,7 +159,7 @@ export class Spawner {
       case 'cone': L.addCone(s, lane); break;
       case 'barrier': L.addBarrier(s, lane); break;
       case 'sign': L.addSign(s, lane); break;
-      case 'bird': L.addBird(s, lane); break;
+      case 'gate': L.addGate(s, lane); break;
       case 'moto': L.addMotorcycle(s, lane); break;
       case 'bus': {
         // Too tall to jump onto; the cash on the roof is a pogo-stick reward.
@@ -411,11 +419,11 @@ export class Spawner {
       // A row of rooftop obstacles in the middle of each roof.
       const mid = cur + len * 0.55;
       const lanes = shuffle([0, 1, 2]);
-      const kind = pick(['cone', 'barrier', 'sign', 'bird']);
+      const kind = pick(['cone', 'barrier', 'sign', 'gate']);
       if (kind === 'cone') L.addCone(mid, lanes[0], H);
       if (kind === 'barrier') L.addBarrier(mid, lanes[0], H);
       if (kind === 'sign') L.addSign(mid, lanes[0], H);
-      if (kind === 'bird') L.addBird(mid + 6, lanes[0], H);
+      if (kind === 'gate') L.addGate(mid, lanes[0], H);
       if (Math.random() < 0.5) L.addCone(mid, lanes[1], H);
       this.cashLine(mid - 6, mid + 6, lanes[2], H + NOTE_Y);
 
@@ -446,42 +454,30 @@ export class Spawner {
     return target * (1 - Math.exp(-2.5 * t));
   }
 
-  // Metal wings: a structured coin path high above the street that weaves between lanes
-  // in straight runs, smooth lane shifts, zig-zags and full-width snakes.
+  // Metal wings: a structured coin path high above the street made only of straight lines:
+  // runs along a lane, straight diagonals to the next lane, and zig-zags of diagonals.
+  // It starts once you've reached flying height, so the whole path is level.
   wingsRun(playerS) {
-    const alt = POWERUP.wings.altitude;
-    const s0 = playerS + 15;
-    const s1 = Spawner.distanceAfter(playerS, POWERUP.wings.duration) - 10;
+    const y = POWERUP.wings.altitude + 0.8;
     const v0 = speedAt(playerS);
+    const s1 = Spawner.distanceAfter(playerS, POWERUP.wings.duration) - 10;
+    let s = playerS + v0 * 1.4;
     let lane = 1;
-    let s = s0;
-    const note = (ss, x) => {
-      const t = (ss - playerS) / v0;
-      const y = Spawner.climbAltitude(alt, t) + 0.8 + Math.sin(ss / 9) * 0.35;
-      this.level.addCash(ss, x, y);
+    const diagonal = (to, len) => {
+      for (let d = 0; d < len && s < s1; d += NOTE_STEP, s += NOTE_STEP) {
+        this.level.addCash(s, LANES[lane] + ((LANES[to] - LANES[lane]) * d) / len, y);
+      }
+      lane = to;
     };
     while (s < s1) {
-      const shape = pickWeighted({ straight: 2, shift: 2, zigzag: 1.2, snake: 1 });
+      const shape = pickWeighted({ straight: 3, diagonal: 2, zigzag: 1.2 });
       if (shape === 'straight') {
-        const end = s + rand(12, 22);
-        for (; s < end && s < s1; s += NOTE_STEP) note(s, LANES[lane]);
-      } else if (shape === 'shift' || shape === 'zigzag') {
-        const steps = shape === 'shift' ? 1 : randInt(3, 4);
-        for (let i = 0; i < steps; i++) {
-          const to = shape === 'shift' ? shiftLane(lane) : (lane === 1 ? pick([0, 2]) : 1);
-          const len = shape === 'shift' ? 12 : 9;
-          for (let d = 0; d < len && s < s1; d += NOTE_STEP, s += NOTE_STEP) {
-            note(s, LANES[lane] + (LANES[to] - LANES[lane]) * smooth(d / len));
-          }
-          lane = to;
-        }
+        const end = s + rand(14, 26);
+        for (; s < end && s < s1; s += NOTE_STEP) this.level.addCash(s, LANES[lane], y);
+      } else if (shape === 'diagonal') {
+        diagonal(shiftLane(lane), 11);
       } else {
-        // Sine snake across all three lanes; a full period ends back in the starting lane.
-        const len = 44;
-        const phase = lane === 0 ? -Math.PI / 2 : lane === 2 ? Math.PI / 2 : 0;
-        for (let d = 0; d < len && s < s1; d += NOTE_STEP, s += NOTE_STEP) {
-          note(s, 2.4 * Math.sin(phase + (d / len) * Math.PI * 2));
-        }
+        for (let i = randInt(3, 4); i > 0; i--) diagonal(lane === 1 ? pick([0, 2]) : 1, 8.8);
       }
     }
   }
